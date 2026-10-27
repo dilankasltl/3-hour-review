@@ -226,8 +226,7 @@ router.post('/tracking', async (req, res) => {
 router.get('/missing-actions', async (req, res) => {
   try {
     const sheets = await TrackingSheet.find({}, 'date shiftType shiftCrew hours')
-      .sort({ date: -1 })
-      .limit(60);
+      .sort({ date: -1 });
 
     const missingList = [];
     sheets.forEach(sheet => {

@@ -65,6 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initDateAndShiftSelectors();
   initEventListeners();
   loadTrackingSheet();
+  fetchMissingActionsFromDB();
 });
 
 // Format today's date as YYYY-MM-DD in local time
@@ -293,7 +294,7 @@ async function loadTrackingSheet() {
       renderTable();
       updateKPISummaries();
       updateMissingActionsBadge();
-      fetchMissingActionsTotalCount();
+      fetchMissingActionsFromDB();
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', json.exists ? 'Loaded from Cloud' : 'Ready (Empty)');
     } else {
@@ -301,7 +302,7 @@ async function loadTrackingSheet() {
       renderTable();
       updateKPISummaries();
       updateMissingActionsBadge();
-      fetchMissingActionsTotalCount();
+      fetchMissingActionsFromDB();
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', 'Ready (Empty)');
     }
@@ -782,6 +783,7 @@ async function saveTrackingSheet(isManual = false) {
     if (res.ok && json.success) {
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', isManual ? 'Saved successfully!' : 'Saved');
+      fetchMissingActionsFromDB();
     } else {
       setSaveStatus('error', json.error || 'Failed to save');
     }
@@ -978,65 +980,11 @@ async function openHistoryModal() {
   }
 }
 
-// Update the badge count of missing containment actions
-function updateMissingActionsBadge() {
-  let count = 0;
-  (state.hours || []).forEach(h => {
-    (h.issues || []).forEach(issue => {
-      const prob = (issue.problem || '').trim();
-      const act = (issue.containmentAction || '').trim();
-      if (prob !== '' && act === '') {
-        count++;
-      }
-    });
-  });
+// State for cached DB missing actions
+let dbMissingActionsCache = [];
 
-  const badge = document.getElementById('missingActionsCount');
-  if (badge) {
-    badge.textContent = count;
-    badge.style.display = count > 0 ? 'inline-flex' : 'none';
-  }
-
-  const tabCountCur = document.getElementById('tabCountCurrent');
-  if (tabCountCur) {
-    tabCountCur.textContent = count;
-  }
-}
-
-// Fetch total missing actions across all dates from MongoDB
-async function fetchMissingActionsTotalCount() {
-  try {
-    const res = await fetch('/api/missing-actions');
-    const json = await res.json();
-    if (json.success) {
-      const tabCountAll = document.getElementById('tabCountAll');
-      if (tabCountAll) tabCountAll.textContent = json.count;
-      window.__allMissingActions = json.missing;
-    }
-  } catch (err) {
-    console.error('Error fetching missing actions count:', err);
-  }
-}
-
-// Missing Containment Actions Modal Logic
-async function openMissingActionsModal() {
-  const modal = document.getElementById('missingActionsModal');
-  if (!modal) return;
-  modal.classList.add('open');
-
-  const tabCurrent = document.getElementById('tabCurrentSheet');
-  const tabAll = document.getElementById('tabAllSheets');
-  if (tabCurrent) tabCurrent.classList.add('active');
-  if (tabAll) tabAll.classList.remove('active');
-
-  renderCurrentSheetMissingActions();
-  fetchMissingActionsTotalCount();
-}
-
-function renderCurrentSheetMissingActions() {
-  const listEl = document.getElementById('missingActionsList');
-  if (!listEl) return;
-
+// Get all current in-memory missing containment actions for active sheet
+function getCurrentSheetMissingActions() {
   const currentMissing = [];
   (state.hours || []).forEach(h => {
     (h.issues || []).forEach((issue, idx) => {
@@ -1052,37 +1000,126 @@ function renderCurrentSheetMissingActions() {
           problem: issue.problem,
           rootCause: issue.rootCause || '',
           defectScrap: issue.defectScrap || '',
+          pcNumber: issue.pcNumber || '',
+          isCurrentSheet: true,
           issueRef: issue
         });
       }
     });
   });
+  return currentMissing;
+}
 
+// Combine all missing actions: other dates from DB + current date from memory
+function getAllMissingActionsCombined() {
+  const currentMissing = getCurrentSheetMissingActions();
+  // Filter out the active sheet from db cache to avoid stale/duplicate items
+  const otherDatesMissing = dbMissingActionsCache.filter(item => 
+    !(item.date === state.date && item.shiftType === state.shiftType)
+  );
+  // Return combined list sorted by date descending
+  return [...currentMissing, ...otherDatesMissing].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    if (a.shiftType !== b.shiftType) return a.shiftType.localeCompare(b.shiftType);
+    return a.hourKey.localeCompare(b.hourKey);
+  });
+}
+
+// Update the badge count of missing containment actions (GLOBAL ACROSS ALL DATES)
+function updateMissingActionsBadge() {
+  const allMissing = getAllMissingActionsCombined();
+  const currentMissing = getCurrentSheetMissingActions();
+  const totalCount = allMissing.length;
+
+  const badge = document.getElementById('missingActionsCount');
+  if (badge) {
+    badge.textContent = totalCount;
+    badge.style.display = totalCount > 0 ? 'inline-flex' : 'none';
+  }
+
+  const tabCountAll = document.getElementById('tabCountAll');
+  if (tabCountAll) {
+    tabCountAll.textContent = totalCount;
+  }
+
+  const tabCountCur = document.getElementById('tabCountCurrent');
+  if (tabCountCur) {
+    tabCountCur.textContent = currentMissing.length;
+  }
+}
+
+// Fetch total missing actions across all dates from MongoDB
+async function fetchMissingActionsFromDB() {
+  try {
+    const res = await fetch('/api/missing-actions');
+    const json = await res.json();
+    if (json.success && Array.isArray(json.missing)) {
+      dbMissingActionsCache = json.missing;
+      updateMissingActionsBadge();
+    }
+  } catch (err) {
+    console.error('Error fetching missing actions from DB:', err);
+  }
+}
+
+// Missing Containment Actions Modal Logic
+async function openMissingActionsModal() {
+  const modal = document.getElementById('missingActionsModal');
+  if (!modal) return;
+  modal.classList.add('open');
+
+  const tabAll = document.getElementById('tabAllSheets');
+  const tabCurrent = document.getElementById('tabCurrentSheet');
+  if (tabAll) tabAll.classList.add('active');
+  if (tabCurrent) tabCurrent.classList.remove('active');
+
+  // Immediately refresh database missing actions and render All Dates
+  await fetchMissingActionsFromDB();
+  renderAllSheetsMissingActions();
+}
+
+function renderAllSheetsMissingActions() {
+  const listEl = document.getElementById('missingActionsList');
+  if (!listEl) return;
+
+  const allMissing = getAllMissingActionsCombined();
+  const currentMissing = getCurrentSheetMissingActions();
+
+  const tabCountAll = document.getElementById('tabCountAll');
+  if (tabCountAll) tabCountAll.textContent = allMissing.length;
   const tabCountCur = document.getElementById('tabCountCurrent');
   if (tabCountCur) tabCountCur.textContent = currentMissing.length;
 
-  if (currentMissing.length === 0) {
+  if (allMissing.length === 0) {
     listEl.innerHTML = `
       <div style="text-align: center; padding: 40px 20px; color: #16a34a;">
-        <div style="font-size: 2.5rem; margin-bottom: 8px;">✅</div>
-        <div style="font-weight: 800; font-size: 1.1rem;">All containment actions are filled for the current sheet!</div>
-        <div style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Every recorded problem has a containment action.</div>
+        <div style="font-size: 2.5rem; margin-bottom: 8px;">🎉</div>
+        <div style="font-weight: 800; font-size: 1.1rem;">Zero missing containment actions across all recorded dates!</div>
+        <div style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Great job! All issues have logged containment actions.</div>
       </div>
     `;
     return;
   }
 
   listEl.innerHTML = '';
-  currentMissing.forEach(item => {
+  allMissing.forEach(item => {
+    const isCurrent = (item.date === state.date && item.shiftType === state.shiftType);
     const card = document.createElement('div');
     card.className = 'missing-item-card';
+
+    const isDay = item.shiftType === 'DAY';
+    const shiftBadge = isDay ? '☀️ DAY' : '🌙 NIGHT';
 
     card.innerHTML = `
       <div class="missing-header-row">
         <div class="missing-badges">
-          <span class="badge-info badge-date">📅 ${item.date}</span>
-          <span class="badge-info">Shift: ${item.shiftType} (${item.shiftCrew})</span>
+          <span class="badge-info badge-date" style="font-weight: 900; font-size: 0.82rem;">📅 ${item.date}</span>
+          <span class="badge-info">${shiftBadge} (Crew ${item.shiftCrew || 'A'})</span>
           <span class="badge-info badge-hour">⏰ ${item.hourKey} - Line #${item.lineIdx + 1}</span>
+          ${isCurrent ? '<span class="badge-info" style="background:#10b981; color:#fff; font-weight:800;">ACTIVE SHEET</span>' : ''}
+        </div>
+        <div>
+          ${!isCurrent ? '<button type="button" class="btn-jump-sheet" title="Open this date\'s sheet">🔍 Open Sheet</button>' : ''}
         </div>
       </div>
       <div class="missing-body-grid">
@@ -1096,102 +1133,32 @@ function renderCurrentSheetMissingActions() {
         </div>
       </div>
       <div class="missing-input-row">
-        <input type="text" class="missing-input-action" placeholder="Enter Containment Action here..." value="${escapeHtml(item.issueRef.containmentAction || '')}">
+        <input type="text" class="missing-input-action" placeholder="Enter Containment Action here..." value="${escapeHtml(item.containmentAction || (item.issueRef && item.issueRef.containmentAction) || '')}">
         <button type="button" class="btn-save-inline">💾 Save Action</button>
       </div>
     `;
 
     const input = card.querySelector('.missing-input-action');
     const btnSave = card.querySelector('.btn-save-inline');
+    const btnJump = card.querySelector('.btn-jump-sheet');
 
-    btnSave.addEventListener('click', () => {
+    btnSave.addEventListener('click', async () => {
       const val = input.value.trim();
       if (!val) {
         alert('Please enter a containment action.');
         return;
       }
-      item.issueRef.containmentAction = val;
-      state.hasUnsavedChanges = true;
-      saveTrackingSheet(false);
-      renderTable();
-      updateMissingActionsBadge();
-      renderCurrentSheetMissingActions();
-    });
+      btnSave.disabled = true;
+      btnSave.textContent = 'Saving...';
 
-    listEl.appendChild(card);
-  });
-}
-
-async function renderAllSheetsMissingActions() {
-  const listEl = document.getElementById('missingActionsList');
-  if (!listEl) return;
-
-  listEl.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 30px;">Loading pending actions across all dates from MongoDB...</p>';
-
-  try {
-    const res = await fetch('/api/missing-actions');
-    const json = await res.json();
-
-    if (!json.success || !json.missing || json.missing.length === 0) {
-      listEl.innerHTML = `
-        <div style="text-align: center; padding: 40px 20px; color: #16a34a;">
-          <div style="font-size: 2.5rem; margin-bottom: 8px;">🎉</div>
-          <div style="font-weight: 800; font-size: 1.1rem;">Zero missing containment actions across all recorded shifts!</div>
-          <div style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Great job! All issues have logged containment actions.</div>
-        </div>
-      `;
-      const tabCountAll = document.getElementById('tabCountAll');
-      if (tabCountAll) tabCountAll.textContent = '0';
-      return;
-    }
-
-    const tabCountAll = document.getElementById('tabCountAll');
-    if (tabCountAll) tabCountAll.textContent = json.missing.length;
-
-    listEl.innerHTML = '';
-    json.missing.forEach(item => {
-      const card = document.createElement('div');
-      card.className = 'missing-item-card';
-
-      card.innerHTML = `
-        <div class="missing-header-row">
-          <div class="missing-badges">
-            <span class="badge-info badge-date">📅 ${item.date}</span>
-            <span class="badge-info">Shift: ${item.shiftType} (${item.shiftCrew})</span>
-            <span class="badge-info badge-hour">⏰ ${item.hourKey} - Line #${item.lineIdx + 1}</span>
-          </div>
-          <div>
-            <button type="button" class="btn-jump-sheet" title="Go to this sheet">🔍 Open Sheet</button>
-          </div>
-        </div>
-        <div class="missing-body-grid">
-          <div>
-            <div class="missing-field-label">Problem / Issue:</div>
-            <div class="missing-field-val problem-val">⚠️ ${escapeHtml(item.problem)}</div>
-          </div>
-          <div>
-            <div class="missing-field-label">Root Cause:</div>
-            <div class="missing-field-val">${escapeHtml(item.rootCause || '—')}</div>
-          </div>
-        </div>
-        <div class="missing-input-row">
-          <input type="text" class="missing-input-action" placeholder="Enter Containment Action here...">
-          <button type="button" class="btn-save-inline">💾 Save Action</button>
-        </div>
-      `;
-
-      const input = card.querySelector('.missing-input-action');
-      const btnSave = card.querySelector('.btn-save-inline');
-      const btnJump = card.querySelector('.btn-jump-sheet');
-
-      btnSave.addEventListener('click', async () => {
-        const val = input.value.trim();
-        if (!val) {
-          alert('Please enter a containment action.');
-          return;
-        }
-        btnSave.disabled = true;
-        btnSave.textContent = 'Saving...';
+      if (isCurrent && item.issueRef) {
+        item.issueRef.containmentAction = val;
+        state.hasUnsavedChanges = true;
+        await saveTrackingSheet(false);
+        renderTable();
+        await fetchMissingActionsFromDB();
+        renderAllSheetsMissingActions();
+      } else {
         try {
           const updateRes = await fetch('/api/containment-action', {
             method: 'PATCH',
@@ -1206,15 +1173,7 @@ async function renderAllSheetsMissingActions() {
           });
           const updateJson = await updateRes.json();
           if (updateRes.ok && updateJson.success) {
-            // If the edited item was in the current sheet, update local state too
-            if (item.date === state.date && item.shiftType === state.shiftType) {
-              const h = (state.hours || []).find(x => x.hourKey === item.hourKey);
-              if (h && h.issues && h.issues[item.lineIdx]) {
-                h.issues[item.lineIdx].containmentAction = val;
-                renderTable();
-                updateMissingActionsBadge();
-              }
-            }
+            await fetchMissingActionsFromDB();
             renderAllSheetsMissingActions();
           } else {
             alert('Failed to save: ' + (updateJson.error || 'Server error'));
@@ -1226,8 +1185,10 @@ async function renderAllSheetsMissingActions() {
           btnSave.disabled = false;
           btnSave.textContent = '💾 Save Action';
         }
-      });
+      }
+    });
 
+    if (btnJump) {
       btnJump.addEventListener('click', async () => {
         if (state.hasUnsavedChanges) await saveTrackingSheet(false);
         state.date = item.date;
@@ -1250,12 +1211,84 @@ async function renderAllSheetsMissingActions() {
 
         await loadTrackingSheet();
       });
+    }
 
-      listEl.appendChild(card);
-    });
-  } catch (err) {
-    listEl.innerHTML = `<p style="text-align: center; color: #dc2626; padding: 20px;">Error: ${err.message}</p>`;
+    listEl.appendChild(card);
+  });
+}
+
+function renderCurrentSheetMissingActions() {
+  const listEl = document.getElementById('missingActionsList');
+  if (!listEl) return;
+
+  const currentMissing = getCurrentSheetMissingActions();
+  const allMissing = getAllMissingActionsCombined();
+
+  const tabCountAll = document.getElementById('tabCountAll');
+  if (tabCountAll) tabCountAll.textContent = allMissing.length;
+  const tabCountCur = document.getElementById('tabCountCurrent');
+  if (tabCountCur) tabCountCur.textContent = currentMissing.length;
+
+  if (currentMissing.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; color: #16a34a;">
+        <div style="font-size: 2.5rem; margin-bottom: 8px;">✅</div>
+        <div style="font-weight: 800; font-size: 1.1rem;">All containment actions are filled for ${state.date} (${state.shiftType})!</div>
+        <div style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Click the "All Dates" tab to check other dates.</div>
+      </div>
+    `;
+    return;
   }
+
+  listEl.innerHTML = '';
+  currentMissing.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'missing-item-card';
+
+    card.innerHTML = `
+      <div class="missing-header-row">
+        <div class="missing-badges">
+          <span class="badge-info badge-date" style="font-weight: 900; font-size: 0.82rem;">📅 ${item.date}</span>
+          <span class="badge-info">Shift: ${item.shiftType} (${item.shiftCrew})</span>
+          <span class="badge-info badge-hour">⏰ ${item.hourKey} - Line #${item.lineIdx + 1}</span>
+          <span class="badge-info" style="background:#10b981; color:#fff; font-weight:800;">ACTIVE SHEET</span>
+        </div>
+      </div>
+      <div class="missing-body-grid">
+        <div>
+          <div class="missing-field-label">Problem / Issue:</div>
+          <div class="missing-field-val problem-val">⚠️ ${escapeHtml(item.problem)}</div>
+        </div>
+        <div>
+          <div class="missing-field-label">Root Cause:</div>
+          <div class="missing-field-val">${escapeHtml(item.rootCause || '—')}</div>
+        </div>
+      </div>
+      <div class="missing-input-row">
+        <input type="text" class="missing-input-action" placeholder="Enter Containment Action here..." value="${escapeHtml(item.issueRef.containmentAction || '')}">
+        <button type="button" class="btn-save-inline">💾 Save Action</button>
+      </div>
+    `;
+
+    const input = card.querySelector('.missing-input-action');
+    const btnSave = card.querySelector('.btn-save-inline');
+
+    btnSave.addEventListener('click', async () => {
+      const val = input.value.trim();
+      if (!val) {
+        alert('Please enter a containment action.');
+        return;
+      }
+      item.issueRef.containmentAction = val;
+      state.hasUnsavedChanges = true;
+      await saveTrackingSheet(false);
+      renderTable();
+      await fetchMissingActionsFromDB();
+      renderCurrentSheetMissingActions();
+    });
+
+    listEl.appendChild(card);
+  });
 }
 
 function escapeHtml(str) {
