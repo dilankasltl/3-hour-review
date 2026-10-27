@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3 HRS. TRACKING - Production Review</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
+</head>
+<body>
+
+  <!-- Top App Navigation & Controls Header -->
+  <header class="app-header">
+    <div class="header-top">
+      <div class="brand-section">
+        <h1 class="brand-title">
+          <span>3 HRS. TRACKING</span>
+          <span class="badge-tag" id="currentShiftBadge">DAY SHIFT</span>
+        </h1>
+      </div>
+
+      <div class="header-clock-section">
+        <div class="live-clock" id="liveClockDisplay">--:--:--</div>
+        <div class="save-indicator">
+          <span class="indicator-dot saved" id="saveDot"></span>
+          <span id="saveStatusText">Saved</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls-bar">
+      <div class="controls-left">
+        <!-- Date Selector -->
+        <div class="control-group">
+          <span class="control-label">Date:</span>
+          <input type="date" id="sheetDate" class="input-date">
+        </div>
+
+        <!-- Shift Type (Day / Night) -->
+        <div class="control-group">
+          <span class="control-label">Shift:</span>
+          <div class="shift-pills">
+            <button type="button" class="shift-pill active day-shift" id="btnDayShift" data-shift="DAY">
+              ☀️ DAY (07:00 - 19:00)
+            </button>
+            <button type="button" class="shift-pill" id="btnNightShift" data-shift="NIGHT">
+              🌙 NIGHT (19:00 - 07:00)
+            </button>
+          </div>
+        </div>
+
+        <!-- Crew (A, B, C) -->
+        <div class="control-group">
+          <span class="control-label">Crew:</span>
+          <div class="crew-pills">
+            <button type="button" class="crew-pill active" data-crew="A">A</button>
+            <button type="button" class="crew-pill" data-crew="B">B</button>
+            <button type="button" class="crew-pill" data-crew="C">C</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls-right">
+        <button type="button" class="btn btn-secondary" id="btnHistory">
+          📅 Past Records
+        </button>
+        <button type="button" class="btn btn-secondary" id="btnPrint">
+          🖨️ Print
+        </button>
+        <button type="button" class="btn btn-success" id="btnExportExcel">
+          📊 Export Excel (.xlsx)
+        </button>
+        <button type="button" class="btn btn-primary" id="btnSaveNow">
+          💾 Save Now
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Sheet Container -->
+  <main class="sheet-container">
+    
+    <!-- Top KPI Stats Banner -->
+    <div class="stats-banner">
+      <div class="stat-item">
+        <div class="stat-label">Total Plan</div>
+        <div class="stat-value" id="kpiTotalPlan">0 <small style="font-size:0.6em;color:#94a3b8">Pcs</small></div>
+      </div>
+      <div class="stat-item ach">
+        <div class="stat-label">Total Achievement</div>
+        <div class="stat-value" id="kpiTotalAch">0 <small style="font-size:0.6em;color:#94a3b8">Pcs</small></div>
+      </div>
+      <div class="stat-item loss">
+        <div class="stat-label">Total Loss</div>
+        <div class="stat-value" id="kpiTotalLoss">0 <small style="font-size:0.6em;color:#94a3b8">Pcs</small></div>
+      </div>
+      <div class="stat-item flash">
+        <div class="stat-label">Total Flash</div>
+        <div class="stat-value" id="kpiTotalFlash">0 <small style="font-size:0.6em;color:#94a3b8">Kg</small></div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Achievement Rate</div>
+        <div class="stat-value" id="kpiAchRate">0.0%</div>
+      </div>
+    </div>
+
+    <!-- Main Spreadsheet Grid Table (Matches uploaded photo) -->
+    <table class="tracking-table" id="trackingTable">
+      <colgroup>
+        <col class="col-time">
+        <col class="col-plan">
+        <col class="col-ach">
+        <col class="col-loss">
+        <col class="col-defect">
+        <col class="col-flash">
+        <col class="col-problem">
+        <col class="col-root">
+        <col class="col-action">
+        <col class="col-pc">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Plan (Pcs)</th>
+          <th>Achievement (Pcs)</th>
+          <th>Loss (Pcs)</th>
+          <th>Defect / Scrap</th>
+          <th>Flash (Kg)</th>
+          <th>Problem . Issue</th>
+          <th>Root Cause</th>
+          <th>Containment Action</th>
+          <th>PC Number / I:R</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <!-- Rendered dynamically by app.js -->
+      </tbody>
+      <tfoot id="tableFoot">
+        <!-- Grand Total row rendered dynamically -->
+      </tfoot>
+    </table>
+  </main>
+
+  <!-- History & Past Records Modal -->
+  <div class="modal-overlay" id="historyModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">📅 Past Shift Records & History</div>
+        <button type="button" class="modal-close" id="btnCloseHistory">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="history-list" id="historyList">
+          <p style="text-align: center; color: #94a3b8; padding: 20px;">Loading records from MongoDB...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/xlsx.full.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
