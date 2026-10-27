@@ -9,81 +9,79 @@
 </head>
 <body>
 
-  <!-- Top App Navigation & Controls Header -->
-  <header class="app-header">
-    <div class="header-top">
-      <div class="brand-section">
-        <h1 class="brand-title">
-          <span>3 HRS. TRACKING</span>
-          <span class="badge-tag" id="currentShiftBadge">DAY SHIFT</span>
-        </h1>
-      </div>
-
-      <div class="header-clock-section">
-        <div class="live-clock" id="liveClockDisplay">--:--:--</div>
-        <div class="save-indicator">
-          <span class="indicator-dot saved" id="saveDot"></span>
-          <span id="saveStatusText">Ready</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="controls-bar">
-      <div class="controls-left">
-        <!-- Date Selector -->
-        <div class="control-group">
-          <span class="control-label">Date:</span>
-          <input type="date" id="sheetDate" class="input-date">
+  <div class="app-layout">
+    <!-- Top App Navigation & Controls Header -->
+    <header class="app-header">
+      <div class="header-top">
+        <div class="brand-section">
+          <h1 class="brand-title">
+            <span>3 HRS. TRACKING</span>
+            <span class="badge-tag" id="currentShiftBadge">DAY SHIFT</span>
+          </h1>
         </div>
 
-        <!-- Shift Type (Day / Night) -->
-        <div class="control-group">
-          <span class="control-label">Shift:</span>
-          <div class="shift-pills">
-            <button type="button" class="shift-pill active day-shift" id="btnDayShift" data-shift="DAY">
-              ☀️ DAY (07:00 - 19:00)
-            </button>
-            <button type="button" class="shift-pill" id="btnNightShift" data-shift="NIGHT">
-              🌙 NIGHT (19:00 - 07:00)
-            </button>
-          </div>
-        </div>
-
-        <!-- Crew (A, B, C) -->
-        <div class="control-group">
-          <span class="control-label">Crew:</span>
-          <div class="crew-pills">
-            <button type="button" class="crew-pill active" data-crew="A">A</button>
-            <button type="button" class="crew-pill" data-crew="B">B</button>
-            <button type="button" class="crew-pill" data-crew="C">C</button>
+        <div class="header-clock-section">
+          <div class="live-clock" id="liveClockDisplay">--:--:--</div>
+          <div class="save-indicator">
+            <span class="indicator-dot saved" id="saveDot"></span>
+            <span id="saveStatusText">Ready</span>
           </div>
         </div>
       </div>
 
-      <div class="controls-right">
-        <button type="button" class="btn btn-secondary" id="btnHistory" title="Browse past recorded days">
-          📅 Past Records
-        </button>
-        <button type="button" class="btn btn-secondary" id="btnPrint" title="Print this tracking sheet">
-          🖨️ Print
-        </button>
-        <button type="button" class="btn btn-success" id="btnExportExcel" title="Download Excel Sheet">
-          📊 Export Excel (.xlsx)
-        </button>
-        <button type="button" class="btn btn-secondary" id="btnClearSheet" title="Clear all inputs for this day">
-          🗑️ Clear Sheet
-        </button>
-        <button type="button" class="btn btn-primary" id="btnSaveNow" title="Force save to MongoDB">
-          💾 Save Now
-        </button>
-      </div>
-    </div>
-  </header>
+      <div class="controls-bar">
+        <div class="controls-left">
+          <!-- Date Selector -->
+          <div class="control-group">
+            <span class="control-label">Date:</span>
+            <input type="date" id="sheetDate" class="input-date">
+          </div>
 
-  <!-- Sheet Container (100% Fit, No Horizontal Scrolling!) -->
-  <main class="sheet-container">
-    
-    <!-- Top KPI Stats Banner -->
+          <!-- Shift Type (Day / Night) -->
+          <div class="control-group">
+            <span class="control-label">Shift:</span>
+            <div class="shift-pills">
+              <button type="button" class="shift-pill active day-shift" id="btnDayShift" data-shift="DAY">
+                ☀️ DAY (07:00 - 19:00)
+              </button>
+              <button type="button" class="shift-pill" id="btnNightShift" data-shift="NIGHT">
+                🌙 NIGHT (19:00 - 07:00)
+              </button>
+            </div>
+          </div>
+
+          <!-- Crew (A, B, C) -->
+          <div class="control-group">
+            <span class="control-label">Crew:</span>
+            <div class="crew-pills">
+              <button type="button" class="crew-pill active" data-crew="A">A</button>
+              <button type="button" class="crew-pill" data-crew="B">B</button>
+              <button type="button" class="crew-pill" data-crew="C">C</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls-right">
+          <button type="button" class="btn btn-secondary" id="btnHistory" title="Browse past recorded days">
+            📅 Past Records
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnPrint" title="Print this tracking sheet">
+            🖨️ Print
+          </button>
+          <button type="button" class="btn btn-success" id="btnExportExcel" title="Download Excel Sheet">
+            📊 Export Excel (.xlsx)
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnClearSheet" title="Clear all inputs for this day">
+            🗑️ Clear Sheet
+          </button>
+          <button type="button" class="btn btn-primary" id="btnSaveNow" title="Force save to MongoDB">
+            💾 Save Now
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Top KPI Stats Banner (Fixed at top) -->
     <div class="stats-banner">
       <div class="stat-item">
         <div class="stat-label">Total Plan</div>
@@ -107,42 +105,44 @@
       </div>
     </div>
 
-    <!-- Main Spreadsheet Grid Table (All 10 columns visible on screen, sticky headers!) -->
-    <table class="tracking-table" id="trackingTable">
-      <colgroup>
-        <col class="col-time">
-        <col class="col-plan">
-        <col class="col-ach">
-        <col class="col-loss">
-        <col class="col-defect">
-        <col class="col-flash">
-        <col class="col-problem">
-        <col class="col-root">
-        <col class="col-action">
-        <col class="col-pc">
-      </colgroup>
-      <thead>
-        <tr>
-          <th>Time</th>
-          <th>Plan (Pcs)</th>
-          <th>Achievement (Pcs)</th>
-          <th>Loss (Pcs)</th>
-          <th>Defect / Scrap</th>
-          <th>Flash (Kg)</th>
-          <th>Problem . Issue</th>
-          <th>Root Cause</th>
-          <th>Containment Action</th>
-          <th>PC Number / I:R</th>
-        </tr>
-      </thead>
-      <tbody id="tableBody">
-        <!-- Rendered dynamically by app.js -->
-      </tbody>
-      <tfoot id="tableFoot">
-        <!-- Grand Total row rendered dynamically -->
-      </tfoot>
-    </table>
-  </main>
+    <!-- Dedicated Scrollable Viewport (Sticky Table Header pins at top: 0) -->
+    <main class="sheet-container">
+      <table class="tracking-table" id="trackingTable">
+        <colgroup>
+          <col class="col-time">
+          <col class="col-plan">
+          <col class="col-ach">
+          <col class="col-loss">
+          <col class="col-defect">
+          <col class="col-flash">
+          <col class="col-problem">
+          <col class="col-root">
+          <col class="col-action">
+          <col class="col-pc">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Plan (Pcs)</th>
+            <th>Achievement (Pcs)</th>
+            <th>Loss (Pcs)</th>
+            <th>Defect / Scrap</th>
+            <th>Flash (Kg)</th>
+            <th>Problem . Issue</th>
+            <th>Root Cause</th>
+            <th>Containment Action</th>
+            <th>PC Number / I:R</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+          <!-- Rendered dynamically by app.js -->
+        </tbody>
+        <tfoot id="tableFoot">
+          <!-- Grand Total row rendered dynamically -->
+        </tfoot>
+      </table>
+    </main>
+  </div>
 
   <!-- History & Past Records Modal -->
   <div class="modal-overlay" id="historyModal">

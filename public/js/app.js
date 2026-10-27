@@ -62,26 +62,10 @@ const state = {
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
   initClock();
-  initStickyHeader();
   initDateAndShiftSelectors();
   initEventListeners();
   loadTrackingSheet();
 });
-
-// Calculate Sticky Header Height Dynamically
-function initStickyHeader() {
-  function updateHeaderHeight() {
-    const header = document.querySelector('.app-header');
-    if (header) {
-      const height = header.offsetHeight;
-      document.documentElement.style.setProperty('--header-height', `${height}px`);
-    }
-  }
-  updateHeaderHeight();
-  window.addEventListener('resize', updateHeaderHeight);
-  // Re-check after font loads
-  setTimeout(updateHeaderHeight, 300);
-}
 
 // Format today's date as YYYY-MM-DD in local time
 function getTodayDateString() {
