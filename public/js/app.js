@@ -186,19 +186,60 @@ function initEventListeners() {
     });
   }
 
-  // History modal
+  // History modal (if present)
   const historyModal = document.getElementById('historyModal');
-  document.getElementById('btnHistory').addEventListener('click', () => {
-    openHistoryModal();
-  });
-  document.getElementById('btnCloseHistory').addEventListener('click', () => {
-    historyModal.classList.remove('open');
-  });
-  historyModal.addEventListener('click', (e) => {
-    if (e.target === historyModal) {
+  const btnHistory = document.getElementById('btnHistory');
+  if (btnHistory && historyModal) {
+    btnHistory.addEventListener('click', () => {
+      openHistoryModal();
+    });
+  }
+  const btnCloseHistory = document.getElementById('btnCloseHistory');
+  if (btnCloseHistory && historyModal) {
+    btnCloseHistory.addEventListener('click', () => {
       historyModal.classList.remove('open');
-    }
-  });
+    });
+    historyModal.addEventListener('click', (e) => {
+      if (e.target === historyModal) {
+        historyModal.classList.remove('open');
+      }
+    });
+  }
+
+  // Missing Containment Actions Modal
+  const missingModal = document.getElementById('missingActionsModal');
+  const btnMissing = document.getElementById('btnMissingActions');
+  if (btnMissing) {
+    btnMissing.addEventListener('click', () => {
+      openMissingActionsModal();
+    });
+  }
+  const btnCloseMissing = document.getElementById('btnCloseMissingActions');
+  if (btnCloseMissing && missingModal) {
+    btnCloseMissing.addEventListener('click', () => {
+      missingModal.classList.remove('open');
+    });
+    missingModal.addEventListener('click', (e) => {
+      if (e.target === missingModal) {
+        missingModal.classList.remove('open');
+      }
+    });
+  }
+
+  const tabCurrent = document.getElementById('tabCurrentSheet');
+  const tabAll = document.getElementById('tabAllSheets');
+  if (tabCurrent && tabAll) {
+    tabCurrent.addEventListener('click', () => {
+      tabCurrent.classList.add('active');
+      tabAll.classList.remove('active');
+      renderCurrentSheetMissingActions();
+    });
+    tabAll.addEventListener('click', () => {
+      tabAll.classList.add('active');
+      tabCurrent.classList.remove('active');
+      renderAllSheetsMissingActions();
+    });
+  }
 }
 
 // Create fresh default template - ALL VALUES NULL (EMPTY) BY DEFAULT
@@ -213,11 +254,11 @@ function createDefaultHours(shiftType) {
     defectScrap: '',
     flashKg: null,
     issues: [
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
     ]
   }));
 }
@@ -234,6 +275,16 @@ async function loadTrackingSheet() {
       state.shiftCrew = data.shiftCrew || 'A';
       state.hours = data.hours || createDefaultHours(state.shiftType);
 
+      // Ensure every issue has defectScrap initialized
+      (state.hours || []).forEach(h => {
+        if (h.defectScrap && h.issues && h.issues.length > 0 && !h.issues[0].defectScrap) {
+          h.issues[0].defectScrap = h.defectScrap;
+        }
+        (h.issues || []).forEach(i => {
+          if (i.defectScrap === undefined) i.defectScrap = '';
+        });
+      });
+
       // Sync crew UI
       document.querySelectorAll('.crew-pill').forEach(b => {
         b.classList.toggle('active', b.dataset.crew === state.shiftCrew);
@@ -241,12 +292,16 @@ async function loadTrackingSheet() {
 
       renderTable();
       updateKPISummaries();
+      updateMissingActionsBadge();
+      fetchMissingActionsTotalCount();
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', json.exists ? 'Loaded from Cloud' : 'Ready (Empty)');
     } else {
       state.hours = createDefaultHours(state.shiftType);
       renderTable();
       updateKPISummaries();
+      updateMissingActionsBadge();
+      fetchMissingActionsTotalCount();
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', 'Ready (Empty)');
     }
@@ -255,6 +310,7 @@ async function loadTrackingSheet() {
     state.hours = createDefaultHours(state.shiftType);
     renderTable();
     updateKPISummaries();
+    updateMissingActionsBadge();
     setSaveStatus('error', 'Offline / Load error');
   }
 }
@@ -278,141 +334,6 @@ function valOrEmpty(val) {
   return (val !== null && val !== undefined) ? val : '';
 }
 
-// Render the Spreadsheet Table
-function renderTable() {
-  const tbody = document.getElementById('tableBody');
-  tbody.innerHTML = '';
-
-  const blocks = [0, 1, 2, 3];
-
-  blocks.forEach(blockIdx => {
-    const blockHours = state.hours.filter(h => h.blockIndex === blockIdx);
-
-    blockHours.forEach((hourData, hourIdxInBlock) => {
-      const hourGlobalIdx = state.hours.indexOf(hourData);
-      const isAltBg = (hourIdxInBlock % 2 === 1);
-      const rowBgClass = isAltBg ? 'row-blue' : 'row-white';
-      const numLines = Math.max(5, (hourData.issues || []).length);
-
-      while (hourData.issues.length < numLines) {
-        hourData.issues.push({ problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
-      }
-
-      for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
-        const tr = document.createElement('tr');
-        tr.className = rowBgClass;
-
-        const issue = hourData.issues[lineIdx] || { problem: '', rootCause: '', containmentAction: '', pcNumber: '' };
-
-        if (lineIdx === 0) {
-          // 1. Time Column
-          const tdTime = document.createElement('td');
-          tdTime.rowSpan = numLines;
-          tdTime.innerHTML = `
-            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:4px 2px;">
-              <span class="time-cell-badge">${hourData.hourKey}</span>
-              <button type="button" class="btn-add-issue" title="Add line" data-hour-idx="${hourGlobalIdx}">
-                + Add Line
-              </button>
-            </div>
-          `;
-          tr.appendChild(tdTime);
-
-          // 2. Plan (Pcs)
-          const tdPlan = document.createElement('td');
-          tdPlan.rowSpan = numLines;
-          const planInput = document.createElement('input');
-          planInput.type = 'number';
-          planInput.className = 'cell-input cell-number';
-          planInput.value = valOrEmpty(hourData.plan);
-          planInput.addEventListener('input', (e) => {
-            const raw = e.target.value.trim();
-            hourData.plan = raw === '' ? null : Number(raw);
-            computeHourLoss(hourData);
-            updateLossCell(hourGlobalIdx);
-            recalculateSubtotals();
-            updateKPISummaries();
-            state.hasUnsavedChanges = true;
-            triggerAutoSave();
-          });
-          tdPlan.appendChild(planInput);
-          tr.appendChild(tdPlan);
-
-          // 3. Achievement (Pcs)
-          const tdAch = document.createElement('td');
-          tdAch.rowSpan = numLines;
-          const achInput = document.createElement('input');
-          achInput.type = 'number';
-          achInput.className = 'cell-input cell-number';
-          achInput.value = valOrEmpty(hourData.achievement);
-          achInput.addEventListener('input', (e) => {
-            const raw = e.target.value.trim();
-            hourData.achievement = raw === '' ? null : Number(raw);
-            computeHourLoss(hourData);
-            updateLossCell(hourGlobalIdx);
-            recalculateSubtotals();
-            updateKPISummaries();
-            state.hasUnsavedChanges = true;
-            triggerAutoSave();
-          });
-          tdAch.appendChild(achInput);
-          tr.appendChild(tdAch);
-
-          // 4. Loss (Pcs)
-          const tdLoss = document.createElement('td');
-          tdLoss.rowSpan = numLines;
-          tdLoss.id = `lossCell-${hourGlobalIdx}`;
-          const lossInput = document.createElement('input');
-          lossInput.type = 'number';
-          lossInput.className = `cell-input cell-number ${getLossClass(hourData.loss)}`;
-          lossInput.value = valOrEmpty(hourData.loss);
-          lossInput.id = `lossInput-${hourGlobalIdx}`;
-          lossInput.addEventListener('input', (e) => {
-            const raw = e.target.value.trim();
-            hourData.loss = raw === '' ? null : Number(raw);
-            lossInput.className = `cell-input cell-number ${getLossClass(hourData.loss)}`;
-            recalculateSubtotals();
-            updateKPISummaries();
-            state.hasUnsavedChanges = true;
-            triggerAutoSave();
-          });
-          tdLoss.appendChild(lossInput);
-          tr.appendChild(tdLoss);
-
-          // 5. Defect / Scrap
-          const tdDefect = document.createElement('td');
-          tdDefect.rowSpan = numLines;
-          const defectTextarea = document.createElement('textarea');
-          defectTextarea.className = 'cell-textarea';
-          defectTextarea.value = hourData.defectScrap || '';
-          defectTextarea.addEventListener('input', (e) => {
-            hourData.defectScrap = e.target.value;
-            state.hasUnsavedChanges = true;
-            triggerAutoSave();
-          });
-          tdDefect.appendChild(defectTextarea);
-          tr.appendChild(tdDefect);
-
-          // 6. Flash (Kg)
-          const tdFlash = document.createElement('td');
-          tdFlash.rowSpan = numLines;
-          const flashInput = document.createElement('input');
-          flashInput.type = 'number';
-          flashInput.step = '0.1';
-          flashInput.className = 'cell-input cell-number';
-          flashInput.value = valOrEmpty(hourData.flashKg);
-          flashInput.addEventListener('input', (e) => {
-            const raw = e.target.value.trim();
-            hourData.flashKg = raw === '' ? null : Number(raw);
-            recalculateSubtotals();
-            updateKPISummaries();
-            state.hasUnsavedChanges = true;
-            triggerAutoSave();
-          });
-          tdFlash.appendChild(flashInput);
-          tr.appendChild(tdFlash);
-        }
-
 // Helper to auto-resize textareas so text wraps cleanly to 2nd, 3rd lines without any dots (...)
 function autoResizeTextarea(el) {
   el.style.height = 'auto';
@@ -433,14 +354,188 @@ function createIssueTextarea(val, onInputCallback) {
   return ta;
 }
 
+// Visual highlight when Problem is entered but Containment Action is empty
+function updateActionHighlight(problemVal, actionVal, tdEl, inputEl) {
+  const hasProblem = (problemVal || '').trim() !== '';
+  const hasAction = (actionVal || '').trim() !== '';
+  const isMissing = hasProblem && !hasAction;
+
+  if (isMissing) {
+    tdEl.classList.add('cell-missing-action');
+    inputEl.classList.add('missing-containment-action');
+    inputEl.placeholder = '⚠️ Action required!';
+  } else {
+    tdEl.classList.remove('cell-missing-action');
+    inputEl.classList.remove('missing-containment-action');
+    inputEl.placeholder = '';
+  }
+}
+
+// Render the Spreadsheet Table
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+
+  const blocks = [0, 1, 2, 3];
+
+  blocks.forEach(blockIdx => {
+    const blockHours = state.hours.filter(h => h.blockIndex === blockIdx);
+
+    blockHours.forEach((hourData, hourIdxInBlock) => {
+      const hourGlobalIdx = state.hours.indexOf(hourData);
+      const isAltBg = (hourIdxInBlock % 2 === 1);
+      const rowBgClass = isAltBg ? 'row-blue' : 'row-white';
+      const numLines = Math.max(5, (hourData.issues || []).length);
+
+      while (hourData.issues.length < numLines) {
+        hourData.issues.push({ defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
+      }
+
+      for (let lineIdx = 0; lineIdx < numLines; lineIdx++) {
+        const tr = document.createElement('tr');
+        tr.className = rowBgClass;
+
+        const issue = hourData.issues[lineIdx] || { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' };
+
+        if (lineIdx === 0) {
+          // 1. Time Column (rowspan = numLines)
+          const tdTime = document.createElement('td');
+          tdTime.rowSpan = numLines;
+          tdTime.innerHTML = `
+            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:4px 2px;">
+              <span class="time-cell-badge">${hourData.hourKey}</span>
+              <button type="button" class="btn-add-issue" title="Add line" data-hour-idx="${hourGlobalIdx}">
+                + Add Line
+              </button>
+            </div>
+          `;
+          tr.appendChild(tdTime);
+
+          // 2. Plan (Pcs) (rowspan = numLines)
+          const tdPlan = document.createElement('td');
+          tdPlan.rowSpan = numLines;
+          const planInput = document.createElement('input');
+          planInput.type = 'number';
+          planInput.className = 'cell-input cell-number';
+          planInput.value = valOrEmpty(hourData.plan);
+          planInput.addEventListener('input', (e) => {
+            const raw = e.target.value.trim();
+            hourData.plan = raw === '' ? null : Number(raw);
+            computeHourLoss(hourData);
+            updateLossCell(hourGlobalIdx);
+            recalculateSubtotals();
+            updateKPISummaries();
+            state.hasUnsavedChanges = true;
+            triggerAutoSave();
+          });
+          tdPlan.appendChild(planInput);
+          tr.appendChild(tdPlan);
+
+          // 3. Achievement (Pcs) (rowspan = numLines)
+          const tdAch = document.createElement('td');
+          tdAch.rowSpan = numLines;
+          const achInput = document.createElement('input');
+          achInput.type = 'number';
+          achInput.className = 'cell-input cell-number';
+          achInput.value = valOrEmpty(hourData.achievement);
+          achInput.addEventListener('input', (e) => {
+            const raw = e.target.value.trim();
+            hourData.achievement = raw === '' ? null : Number(raw);
+            computeHourLoss(hourData);
+            updateLossCell(hourGlobalIdx);
+            recalculateSubtotals();
+            updateKPISummaries();
+            state.hasUnsavedChanges = true;
+            triggerAutoSave();
+          });
+          tdAch.appendChild(achInput);
+          tr.appendChild(tdAch);
+
+          // 4. Loss (Pcs) (rowspan = numLines)
+          const tdLoss = document.createElement('td');
+          tdLoss.rowSpan = numLines;
+          tdLoss.id = `lossCell-${hourGlobalIdx}`;
+          const lossInput = document.createElement('input');
+          lossInput.type = 'number';
+          lossInput.className = `cell-input cell-number ${getLossClass(hourData.loss)}`;
+          lossInput.value = valOrEmpty(hourData.loss);
+          lossInput.id = `lossInput-${hourGlobalIdx}`;
+          lossInput.addEventListener('input', (e) => {
+            const raw = e.target.value.trim();
+            hourData.loss = raw === '' ? null : Number(raw);
+            lossInput.className = `cell-input cell-number ${getLossClass(hourData.loss)}`;
+            recalculateSubtotals();
+            updateKPISummaries();
+            state.hasUnsavedChanges = true;
+            triggerAutoSave();
+          });
+          tdLoss.appendChild(lossInput);
+          tr.appendChild(tdLoss);
+
+          // 5. Defect / Scrap (Ruled line 0, rowspan = 1)
+          const tdDefect = document.createElement('td');
+          const defectInput = createIssueTextarea(issue.defectScrap, (val) => {
+            issue.defectScrap = val;
+            state.hasUnsavedChanges = true;
+            triggerAutoSave();
+          });
+          tdDefect.appendChild(defectInput);
+          tr.appendChild(tdDefect);
+
+          // 6. Flash (Kg) (rowspan = numLines)
+          const tdFlash = document.createElement('td');
+          tdFlash.rowSpan = numLines;
+          const flashInput = document.createElement('input');
+          flashInput.type = 'number';
+          flashInput.step = '0.1';
+          flashInput.className = 'cell-input cell-number';
+          flashInput.value = valOrEmpty(hourData.flashKg);
+          flashInput.addEventListener('input', (e) => {
+            const raw = e.target.value.trim();
+            hourData.flashKg = raw === '' ? null : Number(raw);
+            recalculateSubtotals();
+            updateKPISummaries();
+            state.hasUnsavedChanges = true;
+            triggerAutoSave();
+          });
+          tdFlash.appendChild(flashInput);
+          tr.appendChild(tdFlash);
+        } else {
+          // When lineIdx > 0:
+          // Defect / Scrap (Ruled line lineIdx, rowspan = 1)
+          const tdDefect = document.createElement('td');
+          const defectInput = createIssueTextarea(issue.defectScrap, (val) => {
+            issue.defectScrap = val;
+            state.hasUnsavedChanges = true;
+            triggerAutoSave();
+          });
+          tdDefect.appendChild(defectInput);
+          tr.appendChild(tdDefect);
+        }
+
         // Issue Columns (1 per row)
         // 7. Problem . Issue
         const tdProblem = document.createElement('td');
-        const probInput = createIssueTextarea(issue.problem, (val) => {
-          issue.problem = val;
+        const tdAction = document.createElement('td');
+
+        const actInput = createIssueTextarea(issue.containmentAction, (val) => {
+          issue.containmentAction = val;
+          updateActionHighlight(issue.problem, issue.containmentAction, tdAction, actInput);
+          updateMissingActionsBadge();
           state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
+
+        const probInput = createIssueTextarea(issue.problem, (val) => {
+          issue.problem = val;
+          updateActionHighlight(issue.problem, issue.containmentAction, tdAction, actInput);
+          updateMissingActionsBadge();
+          state.hasUnsavedChanges = true;
+          triggerAutoSave();
+        });
+
+        updateActionHighlight(issue.problem, issue.containmentAction, tdAction, actInput);
+
         tdProblem.appendChild(probInput);
         tr.appendChild(tdProblem);
 
@@ -455,12 +550,6 @@ function createIssueTextarea(val, onInputCallback) {
         tr.appendChild(tdRoot);
 
         // 9. Containment Action
-        const tdAction = document.createElement('td');
-        const actInput = createIssueTextarea(issue.containmentAction, (val) => {
-          issue.containmentAction = val;
-          state.hasUnsavedChanges = true;
-          triggerAutoSave();
-        });
         tdAction.appendChild(actInput);
         tr.appendChild(tdAction);
 
@@ -523,7 +612,7 @@ function createIssueTextarea(val, onInputCallback) {
     btn.addEventListener('click', () => {
       const hourIdx = Number(btn.dataset.hourIdx);
       if (state.hours[hourIdx]) {
-        state.hours[hourIdx].issues.push({ problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
+        state.hours[hourIdx].issues.push({ defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
         renderTable();
         state.hasUnsavedChanges = true;
         triggerAutoSave();
@@ -532,6 +621,7 @@ function createIssueTextarea(val, onInputCallback) {
   });
 
   renderGrandTotalRow();
+  updateMissingActionsBadge();
 }
 
 // Compute Loss for an hour: Loss = Plan - Achievement (only when at least Plan or Ach is entered)
@@ -754,7 +844,7 @@ function exportToExcel() {
             valOrEmpty(hour.plan),
             valOrEmpty(hour.achievement),
             valOrEmpty(hour.loss),
-            hour.defectScrap || '',
+            issue.defectScrap || hour.defectScrap || '',
             valOrEmpty(hour.flashKg),
             issue.problem || '',
             issue.rootCause || '',
@@ -763,7 +853,9 @@ function exportToExcel() {
           ]);
         } else {
           rows.push([
-            '', '', '', '', '', '',
+            '', '', '', '',
+            issue.defectScrap || '',
+            '',
             issue.problem || '',
             issue.rootCause || '',
             issue.containmentAction || '',
@@ -884,4 +976,294 @@ async function openHistoryModal() {
   } catch (err) {
     listEl.innerHTML = `<p style="text-align:center; color:#dc2626; padding:20px;">Error loading history: ${err.message}</p>`;
   }
+}
+
+// Update the badge count of missing containment actions
+function updateMissingActionsBadge() {
+  let count = 0;
+  (state.hours || []).forEach(h => {
+    (h.issues || []).forEach(issue => {
+      const prob = (issue.problem || '').trim();
+      const act = (issue.containmentAction || '').trim();
+      if (prob !== '' && act === '') {
+        count++;
+      }
+    });
+  });
+
+  const badge = document.getElementById('missingActionsCount');
+  if (badge) {
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'inline-flex' : 'none';
+  }
+
+  const tabCountCur = document.getElementById('tabCountCurrent');
+  if (tabCountCur) {
+    tabCountCur.textContent = count;
+  }
+}
+
+// Fetch total missing actions across all dates from MongoDB
+async function fetchMissingActionsTotalCount() {
+  try {
+    const res = await fetch('/api/missing-actions');
+    const json = await res.json();
+    if (json.success) {
+      const tabCountAll = document.getElementById('tabCountAll');
+      if (tabCountAll) tabCountAll.textContent = json.count;
+      window.__allMissingActions = json.missing;
+    }
+  } catch (err) {
+    console.error('Error fetching missing actions count:', err);
+  }
+}
+
+// Missing Containment Actions Modal Logic
+async function openMissingActionsModal() {
+  const modal = document.getElementById('missingActionsModal');
+  if (!modal) return;
+  modal.classList.add('open');
+
+  const tabCurrent = document.getElementById('tabCurrentSheet');
+  const tabAll = document.getElementById('tabAllSheets');
+  if (tabCurrent) tabCurrent.classList.add('active');
+  if (tabAll) tabAll.classList.remove('active');
+
+  renderCurrentSheetMissingActions();
+  fetchMissingActionsTotalCount();
+}
+
+function renderCurrentSheetMissingActions() {
+  const listEl = document.getElementById('missingActionsList');
+  if (!listEl) return;
+
+  const currentMissing = [];
+  (state.hours || []).forEach(h => {
+    (h.issues || []).forEach((issue, idx) => {
+      const prob = (issue.problem || '').trim();
+      const act = (issue.containmentAction || '').trim();
+      if (prob !== '' && act === '') {
+        currentMissing.push({
+          date: state.date,
+          shiftType: state.shiftType,
+          shiftCrew: state.shiftCrew,
+          hourKey: h.hourKey,
+          lineIdx: idx,
+          problem: issue.problem,
+          rootCause: issue.rootCause || '',
+          defectScrap: issue.defectScrap || '',
+          issueRef: issue
+        });
+      }
+    });
+  });
+
+  const tabCountCur = document.getElementById('tabCountCurrent');
+  if (tabCountCur) tabCountCur.textContent = currentMissing.length;
+
+  if (currentMissing.length === 0) {
+    listEl.innerHTML = `
+      <div style="text-align: center; padding: 40px 20px; color: #16a34a;">
+        <div style="font-size: 2.5rem; margin-bottom: 8px;">✅</div>
+        <div style="font-weight: 800; font-size: 1.1rem;">All containment actions are filled for the current sheet!</div>
+        <div style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Every recorded problem has a containment action.</div>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = '';
+  currentMissing.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'missing-item-card';
+
+    card.innerHTML = `
+      <div class="missing-header-row">
+        <div class="missing-badges">
+          <span class="badge-info badge-date">📅 ${item.date}</span>
+          <span class="badge-info">Shift: ${item.shiftType} (${item.shiftCrew})</span>
+          <span class="badge-info badge-hour">⏰ ${item.hourKey} - Line #${item.lineIdx + 1}</span>
+        </div>
+      </div>
+      <div class="missing-body-grid">
+        <div>
+          <div class="missing-field-label">Problem / Issue:</div>
+          <div class="missing-field-val problem-val">⚠️ ${escapeHtml(item.problem)}</div>
+        </div>
+        <div>
+          <div class="missing-field-label">Root Cause:</div>
+          <div class="missing-field-val">${escapeHtml(item.rootCause || '—')}</div>
+        </div>
+      </div>
+      <div class="missing-input-row">
+        <input type="text" class="missing-input-action" placeholder="Enter Containment Action here..." value="${escapeHtml(item.issueRef.containmentAction || '')}">
+        <button type="button" class="btn-save-inline">💾 Save Action</button>
+      </div>
+    `;
+
+    const input = card.querySelector('.missing-input-action');
+    const btnSave = card.querySelector('.btn-save-inline');
+
+    btnSave.addEventListener('click', () => {
+      const val = input.value.trim();
+      if (!val) {
+        alert('Please enter a containment action.');
+        return;
+      }
+      item.issueRef.containmentAction = val;
+      state.hasUnsavedChanges = true;
+      saveTrackingSheet(false);
+      renderTable();
+      updateMissingActionsBadge();
+      renderCurrentSheetMissingActions();
+    });
+
+    listEl.appendChild(card);
+  });
+}
+
+async function renderAllSheetsMissingActions() {
+  const listEl = document.getElementById('missingActionsList');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 30px;">Loading pending actions across all dates from MongoDB...</p>';
+
+  try {
+    const res = await fetch('/api/missing-actions');
+    const json = await res.json();
+
+    if (!json.success || !json.missing || json.missing.length === 0) {
+      listEl.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px; color: #16a34a;">
+          <div style="font-size: 2.5rem; margin-bottom: 8px;">🎉</div>
+          <div style="font-weight: 800; font-size: 1.1rem;">Zero missing containment actions across all recorded shifts!</div>
+          <div style="color: #64748b; font-size: 0.85rem; margin-top: 4px;">Great job! All issues have logged containment actions.</div>
+        </div>
+      `;
+      const tabCountAll = document.getElementById('tabCountAll');
+      if (tabCountAll) tabCountAll.textContent = '0';
+      return;
+    }
+
+    const tabCountAll = document.getElementById('tabCountAll');
+    if (tabCountAll) tabCountAll.textContent = json.missing.length;
+
+    listEl.innerHTML = '';
+    json.missing.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'missing-item-card';
+
+      card.innerHTML = `
+        <div class="missing-header-row">
+          <div class="missing-badges">
+            <span class="badge-info badge-date">📅 ${item.date}</span>
+            <span class="badge-info">Shift: ${item.shiftType} (${item.shiftCrew})</span>
+            <span class="badge-info badge-hour">⏰ ${item.hourKey} - Line #${item.lineIdx + 1}</span>
+          </div>
+          <div>
+            <button type="button" class="btn-jump-sheet" title="Go to this sheet">🔍 Open Sheet</button>
+          </div>
+        </div>
+        <div class="missing-body-grid">
+          <div>
+            <div class="missing-field-label">Problem / Issue:</div>
+            <div class="missing-field-val problem-val">⚠️ ${escapeHtml(item.problem)}</div>
+          </div>
+          <div>
+            <div class="missing-field-label">Root Cause:</div>
+            <div class="missing-field-val">${escapeHtml(item.rootCause || '—')}</div>
+          </div>
+        </div>
+        <div class="missing-input-row">
+          <input type="text" class="missing-input-action" placeholder="Enter Containment Action here...">
+          <button type="button" class="btn-save-inline">💾 Save Action</button>
+        </div>
+      `;
+
+      const input = card.querySelector('.missing-input-action');
+      const btnSave = card.querySelector('.btn-save-inline');
+      const btnJump = card.querySelector('.btn-jump-sheet');
+
+      btnSave.addEventListener('click', async () => {
+        const val = input.value.trim();
+        if (!val) {
+          alert('Please enter a containment action.');
+          return;
+        }
+        btnSave.disabled = true;
+        btnSave.textContent = 'Saving...';
+        try {
+          const updateRes = await fetch('/api/containment-action', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              date: item.date,
+              shiftType: item.shiftType,
+              hourKey: item.hourKey,
+              lineIdx: item.lineIdx,
+              containmentAction: val
+            })
+          });
+          const updateJson = await updateRes.json();
+          if (updateRes.ok && updateJson.success) {
+            // If the edited item was in the current sheet, update local state too
+            if (item.date === state.date && item.shiftType === state.shiftType) {
+              const h = (state.hours || []).find(x => x.hourKey === item.hourKey);
+              if (h && h.issues && h.issues[item.lineIdx]) {
+                h.issues[item.lineIdx].containmentAction = val;
+                renderTable();
+                updateMissingActionsBadge();
+              }
+            }
+            renderAllSheetsMissingActions();
+          } else {
+            alert('Failed to save: ' + (updateJson.error || 'Server error'));
+            btnSave.disabled = false;
+            btnSave.textContent = '💾 Save Action';
+          }
+        } catch (err) {
+          alert('Network error: ' + err.message);
+          btnSave.disabled = false;
+          btnSave.textContent = '💾 Save Action';
+        }
+      });
+
+      btnJump.addEventListener('click', async () => {
+        if (state.hasUnsavedChanges) await saveTrackingSheet(false);
+        state.date = item.date;
+        state.shiftType = item.shiftType;
+        state.shiftCrew = item.shiftCrew || 'A';
+        document.getElementById('sheetDate').value = state.date;
+
+        const btnDay = document.getElementById('btnDayShift');
+        const btnNight = document.getElementById('btnNightShift');
+        if (state.shiftType === 'DAY') {
+          btnDay.classList.add('active', 'day-shift');
+          btnNight.classList.remove('active', 'night-shift');
+        } else {
+          btnNight.classList.add('active', 'night-shift');
+          btnDay.classList.remove('active', 'day-shift');
+        }
+
+        const modal = document.getElementById('missingActionsModal');
+        if (modal) modal.classList.remove('open');
+
+        await loadTrackingSheet();
+      });
+
+      listEl.appendChild(card);
+    });
+  } catch (err) {
+    listEl.innerHTML = `<p style="text-align: center; color: #dc2626; padding: 20px;">Error: ${err.message}</p>`;
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

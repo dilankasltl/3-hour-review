@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const IssueRowSchema = new mongoose.Schema({
+  defectScrap: { type: String, default: '' },
   problem: { type: String, default: '' },
   rootCause: { type: String, default: '' },
   containmentAction: { type: String, default: '' },
@@ -18,11 +19,11 @@ const HourDataSchema = new mongoose.Schema({
   issues: {
     type: [IssueRowSchema],
     default: () => [
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
     ]
   }
 }, { _id: false });

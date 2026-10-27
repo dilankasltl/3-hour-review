@@ -45,11 +45,11 @@ function createDefaultHours(shiftType) {
     defectScrap: '',
     flashKg: null,
     issues: [
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
     ]
   }));
 }
@@ -89,9 +89,19 @@ router.get('/tracking', async (req, res) => {
     const mergedHours = defaultHours.map(def => {
       const found = existingHoursMap.get(def.hourKey);
       if (found) {
-        const currentIssues = found.issues || [];
+        const currentIssues = (found.issues || []).map(i => ({
+          defectScrap: i.defectScrap !== undefined ? String(i.defectScrap || '') : '',
+          problem: String(i.problem || ''),
+          rootCause: String(i.rootCause || ''),
+          containmentAction: String(i.containmentAction || ''),
+          pcNumber: String(i.pcNumber || '')
+        }));
+        // If hour has legacy single defectScrap and 1st issue doesn't have it, copy over
+        if (found.defectScrap && currentIssues.length > 0 && !currentIssues[0].defectScrap) {
+          currentIssues[0].defectScrap = found.defectScrap;
+        }
         while (currentIssues.length < 5) {
-          currentIssues.push({ problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
+          currentIssues.push({ defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
         }
         return {
           hourKey: def.hourKey,
@@ -113,11 +123,11 @@ router.get('/tracking', async (req, res) => {
           defectScrap: '',
           flashKg: null,
           issues: [
-            { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
           ]
         };
       }
@@ -180,6 +190,7 @@ router.post('/tracking', async (req, res) => {
         defectScrap: String(h.defectScrap || ''),
         flashKg: parseNullableNumber(h.flashKg),
         issues: (h.issues || []).map(i => ({
+          defectScrap: String(i.defectScrap || ''),
           problem: String(i.problem || ''),
           rootCause: String(i.rootCause || ''),
           containmentAction: String(i.containmentAction || ''),
@@ -208,6 +219,69 @@ router.post('/tracking', async (req, res) => {
   } catch (err) {
     console.error('Error saving tracking sheet:', err);
     res.status(500).json({ error: 'Server error saving sheet: ' + err.message });
+  }
+});
+
+// GET /api/missing-actions - Get list of issues missing containment actions across saved sheets
+router.get('/missing-actions', async (req, res) => {
+  try {
+    const sheets = await TrackingSheet.find({}, 'date shiftType shiftCrew hours')
+      .sort({ date: -1 })
+      .limit(60);
+
+    const missingList = [];
+    sheets.forEach(sheet => {
+      (sheet.hours || []).forEach(h => {
+        (h.issues || []).forEach((issue, idx) => {
+          const problem = (issue.problem || '').trim();
+          const containmentAction = (issue.containmentAction || '').trim();
+          if (problem !== '' && containmentAction === '') {
+            missingList.push({
+              sheetId: sheet._id,
+              date: sheet.date,
+              shiftType: sheet.shiftType,
+              shiftCrew: sheet.shiftCrew,
+              hourKey: h.hourKey,
+              lineIdx: idx,
+              problem: issue.problem,
+              rootCause: issue.rootCause || '',
+              defectScrap: issue.defectScrap || '',
+              pcNumber: issue.pcNumber || ''
+            });
+          }
+        });
+      });
+    });
+
+    res.json({ success: true, count: missingList.length, missing: missingList });
+  } catch (err) {
+    console.error('Error fetching missing actions:', err);
+    res.status(500).json({ error: 'Server error fetching missing actions' });
+  }
+});
+
+// PATCH /api/containment-action - Quick update containment action for a specific hour and line
+router.patch('/containment-action', async (req, res) => {
+  try {
+    const { date, shiftType, hourKey, lineIdx, containmentAction } = req.body;
+    if (!date || !shiftType || !hourKey || lineIdx === undefined) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const sheet = await TrackingSheet.findOne({ date, shiftType: shiftType.toUpperCase() });
+    if (!sheet) {
+      return res.status(404).json({ error: 'Sheet not found' });
+    }
+    const hour = (sheet.hours || []).find(h => h.hourKey === hourKey);
+    if (!hour || !hour.issues || !hour.issues[lineIdx]) {
+      return res.status(404).json({ error: 'Hour or line not found' });
+    }
+    hour.issues[lineIdx].containmentAction = containmentAction || '';
+    sheet.lastSavedAt = new Date();
+    await sheet.save();
+    res.json({ success: true, message: 'Containment action saved successfully' });
+  } catch (err) {
+    console.error('Error updating containment action:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 

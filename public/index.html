@@ -65,8 +65,8 @@
         </div>
 
         <div class="controls-right">
-          <button type="button" class="btn btn-secondary" id="btnHistory" title="Browse past recorded days">
-            📅 Past Records
+          <button type="button" class="btn btn-warning" id="btnMissingActions" title="View problems with missing containment actions">
+            ⚠️ Missing Actions <span class="badge-pulse" id="missingActionsCount">0</span>
           </button>
           <button type="button" class="btn btn-secondary" id="btnPrint" title="Print this tracking sheet">
             🖨️ Print
@@ -74,7 +74,7 @@
           <button type="button" class="btn btn-success" id="btnExportExcel" title="Download Excel Sheet">
             📊 Export Excel (.xlsx)
           </button>
-          <button type="button" class="btn btn-secondary" id="btnClearSheet" title="Clear all inputs for this day">
+          <button type="button" class="btn btn-secondary" id="btnClearSheet" title="Clear all inputs for this day" style="display: none;">
             🗑️ Clear Sheet
           </button>
           <button type="button" class="btn btn-primary" id="btnSaveNow" title="Force save to MongoDB">
@@ -145,6 +145,29 @@
         </tfoot>
       </table>
     </main>
+  </div>
+
+  <!-- Missing Containment Actions Modal -->
+  <div class="modal-overlay" id="missingActionsModal">
+    <div class="modal-card modal-lg">
+      <div class="modal-header modal-header-warning">
+        <div class="modal-title">⚠️ Pending Containment Actions</div>
+        <button type="button" class="modal-close" id="btnCloseMissingActions">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="missing-tabs">
+          <button type="button" class="tab-btn active" id="tabCurrentSheet">
+            Current Sheet (<span id="tabCountCurrent">0</span>)
+          </button>
+          <button type="button" class="tab-btn" id="tabAllSheets">
+            All Recorded Dates (<span id="tabCountAll">0</span>)
+          </button>
+        </div>
+        <div class="missing-actions-container" id="missingActionsList">
+          <!-- Loaded dynamically by app.js -->
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- History & Past Records Modal -->
