@@ -10,11 +10,11 @@ const IssueRowSchema = new mongoose.Schema({
 const HourDataSchema = new mongoose.Schema({
   hourKey: { type: String, required: true },
   blockIndex: { type: Number, required: true }, // 0: 1st 3hrs, 1: 2nd 3hrs, 2: 3rd 3hrs, 3: 4th 3hrs
-  plan: { type: Number, default: 0 },
-  achievement: { type: Number, default: 0 },
-  loss: { type: Number, default: 0 },
+  plan: { type: Number, default: null },
+  achievement: { type: Number, default: null },
+  loss: { type: Number, default: null },
   defectScrap: { type: String, default: '' },
-  flashKg: { type: Number, default: 0 },
+  flashKg: { type: Number, default: null },
   issues: {
     type: [IssueRowSchema],
     default: () => [

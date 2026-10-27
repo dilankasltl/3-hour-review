@@ -23,7 +23,7 @@
         <div class="live-clock" id="liveClockDisplay">--:--:--</div>
         <div class="save-indicator">
           <span class="indicator-dot saved" id="saveDot"></span>
-          <span id="saveStatusText">Saved</span>
+          <span id="saveStatusText">Ready</span>
         </div>
       </div>
     </div>
@@ -61,50 +61,53 @@
       </div>
 
       <div class="controls-right">
-        <button type="button" class="btn btn-secondary" id="btnHistory">
+        <button type="button" class="btn btn-secondary" id="btnHistory" title="Browse past recorded days">
           📅 Past Records
         </button>
-        <button type="button" class="btn btn-secondary" id="btnPrint">
+        <button type="button" class="btn btn-secondary" id="btnPrint" title="Print this tracking sheet">
           🖨️ Print
         </button>
-        <button type="button" class="btn btn-success" id="btnExportExcel">
+        <button type="button" class="btn btn-success" id="btnExportExcel" title="Download Excel Sheet">
           📊 Export Excel (.xlsx)
         </button>
-        <button type="button" class="btn btn-primary" id="btnSaveNow">
+        <button type="button" class="btn btn-secondary" id="btnClearSheet" title="Clear all inputs for this day">
+          🗑️ Clear Sheet
+        </button>
+        <button type="button" class="btn btn-primary" id="btnSaveNow" title="Force save to MongoDB">
           💾 Save Now
         </button>
       </div>
     </div>
   </header>
 
-  <!-- Sheet Container -->
+  <!-- Sheet Container (100% Fit, No Horizontal Scrolling!) -->
   <main class="sheet-container">
     
     <!-- Top KPI Stats Banner -->
     <div class="stats-banner">
       <div class="stat-item">
         <div class="stat-label">Total Plan</div>
-        <div class="stat-value" id="kpiTotalPlan">0 <small style="font-size:0.6em;color:#94a3b8">Pcs</small></div>
+        <div class="stat-value" id="kpiTotalPlan">—</div>
       </div>
       <div class="stat-item ach">
         <div class="stat-label">Total Achievement</div>
-        <div class="stat-value" id="kpiTotalAch">0 <small style="font-size:0.6em;color:#94a3b8">Pcs</small></div>
+        <div class="stat-value" id="kpiTotalAch">—</div>
       </div>
       <div class="stat-item loss">
         <div class="stat-label">Total Loss</div>
-        <div class="stat-value" id="kpiTotalLoss">0 <small style="font-size:0.6em;color:#94a3b8">Pcs</small></div>
+        <div class="stat-value" id="kpiTotalLoss">—</div>
       </div>
       <div class="stat-item flash">
         <div class="stat-label">Total Flash</div>
-        <div class="stat-value" id="kpiTotalFlash">0 <small style="font-size:0.6em;color:#94a3b8">Kg</small></div>
+        <div class="stat-value" id="kpiTotalFlash">—</div>
       </div>
-      <div class="stat-item">
+      <div class="stat-item rate">
         <div class="stat-label">Achievement Rate</div>
-        <div class="stat-value" id="kpiAchRate">0.0%</div>
+        <div class="stat-value" id="kpiAchRate">—</div>
       </div>
     </div>
 
-    <!-- Main Spreadsheet Grid Table (Matches uploaded photo) -->
+    <!-- Main Spreadsheet Grid Table (All 10 columns visible on screen, sticky headers!) -->
     <table class="tracking-table" id="trackingTable">
       <colgroup>
         <col class="col-time">

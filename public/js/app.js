@@ -55,16 +55,33 @@ const state = {
   hours: [],
   isSaving: false,
   saveTimeout: null,
-  isInitialized: false
+  isInitialized: false,
+  hasUnsavedChanges: false
 };
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
   initClock();
+  initStickyHeader();
   initDateAndShiftSelectors();
   initEventListeners();
   loadTrackingSheet();
 });
+
+// Calculate Sticky Header Height Dynamically
+function initStickyHeader() {
+  function updateHeaderHeight() {
+    const header = document.querySelector('.app-header');
+    if (header) {
+      const height = header.offsetHeight;
+      document.documentElement.style.setProperty('--header-height', `${height}px`);
+    }
+  }
+  updateHeaderHeight();
+  window.addEventListener('resize', updateHeaderHeight);
+  // Re-check after font loads
+  setTimeout(updateHeaderHeight, 300);
+}
 
 // Format today's date as YYYY-MM-DD in local time
 function getTodayDateString() {
@@ -78,7 +95,6 @@ function getTodayDateString() {
 // Auto detect DAY or NIGHT shift based on current hour
 function detectShiftFromTime() {
   const hour = new Date().getHours();
-  // 07:00 to 18:59:59 is DAY shift; 19:00 to 06:59:59 is NIGHT shift
   return (hour >= 7 && hour < 19) ? 'DAY' : 'NIGHT';
 }
 
@@ -100,7 +116,11 @@ function initDateAndShiftSelectors() {
   const dateInput = document.getElementById('sheetDate');
   dateInput.value = state.date;
 
-  dateInput.addEventListener('change', (e) => {
+  dateInput.addEventListener('change', async (e) => {
+    // If there were unsaved edits on the current sheet, save first
+    if (state.hasUnsavedChanges) {
+      await saveTrackingSheet(false);
+    }
     state.date = e.target.value;
     loadTrackingSheet();
   });
@@ -127,16 +147,18 @@ function initDateAndShiftSelectors() {
 
   updateShiftPills();
 
-  btnDay.addEventListener('click', () => {
+  btnDay.addEventListener('click', async () => {
     if (state.shiftType !== 'DAY') {
+      if (state.hasUnsavedChanges) await saveTrackingSheet(false);
       state.shiftType = 'DAY';
       updateShiftPills();
       loadTrackingSheet();
     }
   });
 
-  btnNight.addEventListener('click', () => {
+  btnNight.addEventListener('click', async () => {
     if (state.shiftType !== 'NIGHT') {
+      if (state.hasUnsavedChanges) await saveTrackingSheet(false);
       state.shiftType = 'NIGHT';
       updateShiftPills();
       loadTrackingSheet();
@@ -150,6 +172,7 @@ function initDateAndShiftSelectors() {
       crewButtons.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.shiftCrew = btn.dataset.crew;
+      state.hasUnsavedChanges = true;
       triggerAutoSave();
     });
   });
@@ -169,6 +192,16 @@ function initEventListeners() {
     window.print();
   });
 
+  // Clear / Reset Sheet Button
+  const btnClear = document.getElementById('btnClearSheet');
+  if (btnClear) {
+    btnClear.addEventListener('click', async () => {
+      if (confirm(`Are you sure you want to clear all data for ${state.date} (${state.shiftType} Shift)?`)) {
+        await clearCurrentSheet();
+      }
+    });
+  }
+
   // History modal
   const historyModal = document.getElementById('historyModal');
   document.getElementById('btnHistory').addEventListener('click', () => {
@@ -184,17 +217,17 @@ function initEventListeners() {
   });
 }
 
-// Create fresh default template
+// Create fresh default template - ALL VALUES NULL (EMPTY) BY DEFAULT
 function createDefaultHours(shiftType) {
   const template = SHIFT_TEMPLATES[shiftType] || SHIFT_TEMPLATES.DAY;
   return template.map(item => ({
     hourKey: item.hourKey,
     blockIndex: item.blockIndex,
-    plan: 0,
-    achievement: 0,
-    loss: 0,
+    plan: null,
+    achievement: null,
+    loss: null,
     defectScrap: '',
-    flashKg: 0,
+    flashKg: null,
     issues: [
       { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
       { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
@@ -224,12 +257,14 @@ async function loadTrackingSheet() {
 
       renderTable();
       updateKPISummaries();
-      setSaveStatus('saved', json.exists ? 'Loaded from Cloud' : 'New Sheet Ready');
+      state.hasUnsavedChanges = false;
+      setSaveStatus('saved', json.exists ? 'Loaded from Cloud' : 'Ready (Empty)');
     } else {
       state.hours = createDefaultHours(state.shiftType);
       renderTable();
       updateKPISummaries();
-      setSaveStatus('saved', 'New Sheet Ready');
+      state.hasUnsavedChanges = false;
+      setSaveStatus('saved', 'Ready (Empty)');
     }
   } catch (err) {
     console.error('Error loading sheet:', err);
@@ -240,25 +275,41 @@ async function loadTrackingSheet() {
   }
 }
 
+// Clear current sheet from MongoDB & UI
+async function clearCurrentSheet() {
+  try {
+    await fetch(`/api/tracking?date=${state.date}&shiftType=${state.shiftType}`, { method: 'DELETE' });
+    state.hours = createDefaultHours(state.shiftType);
+    renderTable();
+    updateKPISummaries();
+    state.hasUnsavedChanges = false;
+    setSaveStatus('saved', 'Cleared to Empty');
+  } catch (err) {
+    alert('Error clearing sheet: ' + err.message);
+  }
+}
+
+// Helper to format input value (displays blank if null)
+function valOrEmpty(val) {
+  return (val !== null && val !== undefined) ? val : '';
+}
+
 // Render the Spreadsheet Table
 function renderTable() {
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = '';
 
-  // Group hours by 3-hour blocks (0, 1, 2, 3)
   const blocks = [0, 1, 2, 3];
 
   blocks.forEach(blockIdx => {
     const blockHours = state.hours.filter(h => h.blockIndex === blockIdx);
 
-    // Render each hour in this block
     blockHours.forEach((hourData, hourIdxInBlock) => {
       const hourGlobalIdx = state.hours.indexOf(hourData);
       const isAltBg = (hourIdxInBlock % 2 === 1);
       const rowBgClass = isAltBg ? 'row-blue' : 'row-white';
       const numLines = Math.max(5, (hourData.issues || []).length);
 
-      // Ensure state has at least numLines
       while (hourData.issues.length < numLines) {
         hourData.issues.push({ problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
       }
@@ -269,15 +320,14 @@ function renderTable() {
 
         const issue = hourData.issues[lineIdx] || { problem: '', rootCause: '', containmentAction: '', pcNumber: '' };
 
-        // For the first line of the hour, render the spanning columns (rowspan = numLines)
         if (lineIdx === 0) {
           // 1. Time Column
           const tdTime = document.createElement('td');
           tdTime.rowSpan = numLines;
           tdTime.innerHTML = `
-            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;">
+            <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:4px 2px;">
               <span class="time-cell-badge">${hourData.hourKey}</span>
-              <button type="button" class="btn-add-issue" title="Add line for this hour" data-hour-idx="${hourGlobalIdx}">
+              <button type="button" class="btn-add-issue" title="Add line" data-hour-idx="${hourGlobalIdx}">
                 + Add Line
               </button>
             </div>
@@ -290,15 +340,15 @@ function renderTable() {
           const planInput = document.createElement('input');
           planInput.type = 'number';
           planInput.className = 'cell-input cell-number';
-          planInput.value = hourData.plan || '';
-          planInput.placeholder = '0';
+          planInput.value = valOrEmpty(hourData.plan);
           planInput.addEventListener('input', (e) => {
-            hourData.plan = Number(e.target.value) || 0;
-            // Auto calculate Loss = Plan - Achievement
-            hourData.loss = (hourData.plan || 0) - (hourData.achievement || 0);
+            const raw = e.target.value.trim();
+            hourData.plan = raw === '' ? null : Number(raw);
+            computeHourLoss(hourData);
             updateLossCell(hourGlobalIdx);
             recalculateSubtotals();
             updateKPISummaries();
+            state.hasUnsavedChanges = true;
             triggerAutoSave();
           });
           tdPlan.appendChild(planInput);
@@ -310,15 +360,15 @@ function renderTable() {
           const achInput = document.createElement('input');
           achInput.type = 'number';
           achInput.className = 'cell-input cell-number';
-          achInput.value = hourData.achievement || '';
-          achInput.placeholder = '0';
+          achInput.value = valOrEmpty(hourData.achievement);
           achInput.addEventListener('input', (e) => {
-            hourData.achievement = Number(e.target.value) || 0;
-            // Auto calculate Loss = Plan - Achievement
-            hourData.loss = (hourData.plan || 0) - (hourData.achievement || 0);
+            const raw = e.target.value.trim();
+            hourData.achievement = raw === '' ? null : Number(raw);
+            computeHourLoss(hourData);
             updateLossCell(hourGlobalIdx);
             recalculateSubtotals();
             updateKPISummaries();
+            state.hasUnsavedChanges = true;
             triggerAutoSave();
           });
           tdAch.appendChild(achInput);
@@ -331,14 +381,15 @@ function renderTable() {
           const lossInput = document.createElement('input');
           lossInput.type = 'number';
           lossInput.className = `cell-input cell-number ${getLossClass(hourData.loss)}`;
-          lossInput.value = hourData.loss !== undefined ? hourData.loss : '';
-          lossInput.placeholder = '0';
+          lossInput.value = valOrEmpty(hourData.loss);
           lossInput.id = `lossInput-${hourGlobalIdx}`;
           lossInput.addEventListener('input', (e) => {
-            hourData.loss = Number(e.target.value) || 0;
+            const raw = e.target.value.trim();
+            hourData.loss = raw === '' ? null : Number(raw);
             lossInput.className = `cell-input cell-number ${getLossClass(hourData.loss)}`;
             recalculateSubtotals();
             updateKPISummaries();
+            state.hasUnsavedChanges = true;
             triggerAutoSave();
           });
           tdLoss.appendChild(lossInput);
@@ -349,10 +400,10 @@ function renderTable() {
           tdDefect.rowSpan = numLines;
           const defectTextarea = document.createElement('textarea');
           defectTextarea.className = 'cell-textarea';
-          defectTextarea.placeholder = 'Defects list...';
           defectTextarea.value = hourData.defectScrap || '';
           defectTextarea.addEventListener('input', (e) => {
             hourData.defectScrap = e.target.value;
+            state.hasUnsavedChanges = true;
             triggerAutoSave();
           });
           tdDefect.appendChild(defectTextarea);
@@ -365,12 +416,13 @@ function renderTable() {
           flashInput.type = 'number';
           flashInput.step = '0.1';
           flashInput.className = 'cell-input cell-number';
-          flashInput.value = hourData.flashKg || '';
-          flashInput.placeholder = '0';
+          flashInput.value = valOrEmpty(hourData.flashKg);
           flashInput.addEventListener('input', (e) => {
-            hourData.flashKg = Number(e.target.value) || 0;
+            const raw = e.target.value.trim();
+            hourData.flashKg = raw === '' ? null : Number(raw);
             recalculateSubtotals();
             updateKPISummaries();
+            state.hasUnsavedChanges = true;
             triggerAutoSave();
           });
           tdFlash.appendChild(flashInput);
@@ -386,6 +438,7 @@ function renderTable() {
         probInput.value = issue.problem || '';
         probInput.addEventListener('input', (e) => {
           issue.problem = e.target.value;
+          state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
         tdProblem.appendChild(probInput);
@@ -399,6 +452,7 @@ function renderTable() {
         rootInput.value = issue.rootCause || '';
         rootInput.addEventListener('input', (e) => {
           issue.rootCause = e.target.value;
+          state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
         tdRoot.appendChild(rootInput);
@@ -412,12 +466,13 @@ function renderTable() {
         actInput.value = issue.containmentAction || '';
         actInput.addEventListener('input', (e) => {
           issue.containmentAction = e.target.value;
+          state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
         tdAction.appendChild(actInput);
         tr.appendChild(tdAction);
 
-        // 10. PC Number / I:R (with optional delete line if lineIdx >= 5)
+        // 10. PC Number / I:R
         const tdPC = document.createElement('td');
         const pcContainer = document.createElement('div');
         pcContainer.className = 'issue-row-container';
@@ -428,6 +483,7 @@ function renderTable() {
         pcInput.value = issue.pcNumber || '';
         pcInput.addEventListener('input', (e) => {
           issue.pcNumber = e.target.value;
+          state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
         pcContainer.appendChild(pcInput);
@@ -436,11 +492,12 @@ function renderTable() {
           const btnDel = document.createElement('button');
           btnDel.type = 'button';
           btnDel.className = 'btn-del-issue';
-          btnDel.title = 'Remove extra line';
+          btnDel.title = 'Remove line';
           btnDel.innerHTML = '✕';
           btnDel.addEventListener('click', () => {
             hourData.issues.splice(lineIdx, 1);
             renderTable();
+            state.hasUnsavedChanges = true;
             triggerAutoSave();
           });
           pcContainer.appendChild(btnDel);
@@ -453,7 +510,7 @@ function renderTable() {
       }
     });
 
-    // Subtotal Row for this 3-hour Block (Black row matching image!)
+    // Subtotal Row for this 3-hour Block
     const subtotalTr = document.createElement('tr');
     subtotalTr.className = 'subtotal-row';
     subtotalTr.id = `subtotalRow-${blockIdx}`;
@@ -462,12 +519,12 @@ function renderTable() {
     const blockLabel = (BLOCK_LABELS[state.shiftType] && BLOCK_LABELS[state.shiftType][blockIdx]) || `Subtotal (Block ${blockIdx + 1})`;
 
     subtotalTr.innerHTML = `
-      <td class="subtotal-label" style="text-align:center;">${blockLabel}</td>
-      <td class="subtotal-val" id="subtotalPlan-${blockIdx}">${subtotalStats.plan}</td>
-      <td class="subtotal-val" id="subtotalAch-${blockIdx}">${subtotalStats.achievement}</td>
-      <td class="subtotal-val" id="subtotalLoss-${blockIdx}">${subtotalStats.loss}</td>
+      <td class="subtotal-label">${blockLabel}</td>
+      <td class="subtotal-val" id="subtotalPlan-${blockIdx}">${subtotalStats.planDisplay}</td>
+      <td class="subtotal-val" id="subtotalAch-${blockIdx}">${subtotalStats.achDisplay}</td>
+      <td class="subtotal-val" id="subtotalLoss-${blockIdx}">${subtotalStats.lossDisplay}</td>
       <td></td>
-      <td class="subtotal-val" id="subtotalFlash-${blockIdx}">${subtotalStats.flashKg}</td>
+      <td class="subtotal-val" id="subtotalFlash-${blockIdx}">${subtotalStats.flashDisplay}</td>
       <td colspan="4" style="background:#000;"></td>
     `;
     tbody.appendChild(subtotalTr);
@@ -475,22 +532,37 @@ function renderTable() {
 
   // Attach "+ Add Line" event handlers
   document.querySelectorAll('.btn-add-issue').forEach(btn => {
-    btn.addEventListener('click', (e) => {
+    btn.addEventListener('click', () => {
       const hourIdx = Number(btn.dataset.hourIdx);
       if (state.hours[hourIdx]) {
         state.hours[hourIdx].issues.push({ problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
         renderTable();
+        state.hasUnsavedChanges = true;
         triggerAutoSave();
       }
     });
   });
 
-  // Render Footer Grand Total Row
   renderGrandTotalRow();
+}
+
+// Compute Loss for an hour: Loss = Plan - Achievement (only when at least Plan or Ach is entered)
+function computeHourLoss(hourData) {
+  const p = hourData.plan;
+  const a = hourData.achievement;
+
+  if (p === null && a === null) {
+    hourData.loss = null;
+  } else {
+    const pVal = (p !== null) ? p : 0;
+    const aVal = (a !== null) ? a : 0;
+    hourData.loss = pVal - aVal;
+  }
 }
 
 // Helper to style Loss cell
 function getLossClass(loss) {
+  if (loss === null || loss === undefined) return '';
   if (loss > 0) return 'loss-positive';
   if (loss < 0) return 'loss-negative';
   return 'loss-neutral';
@@ -499,7 +571,7 @@ function getLossClass(loss) {
 function updateLossCell(hourIdx) {
   const lossInput = document.getElementById(`lossInput-${hourIdx}`);
   if (lossInput && state.hours[hourIdx]) {
-    lossInput.value = state.hours[hourIdx].loss;
+    lossInput.value = valOrEmpty(state.hours[hourIdx].loss);
     lossInput.className = `cell-input cell-number ${getLossClass(state.hours[hourIdx].loss)}`;
   }
 }
@@ -507,11 +579,29 @@ function updateLossCell(hourIdx) {
 // Calculate 3-hour block subtotal
 function calculateBlockSubtotal(blockIdx) {
   const blockHours = state.hours.filter(h => h.blockIndex === blockIdx);
-  const plan = blockHours.reduce((acc, h) => acc + (Number(h.plan) || 0), 0);
-  const achievement = blockHours.reduce((acc, h) => acc + (Number(h.achievement) || 0), 0);
-  const loss = blockHours.reduce((acc, h) => acc + (Number(h.loss) || 0), 0);
-  const flashKg = Number(blockHours.reduce((acc, h) => acc + (Number(h.flashKg) || 0), 0).toFixed(2));
-  return { plan, achievement, loss, flashKg };
+
+  let planSum = 0, hasPlan = false;
+  let achSum = 0, hasAch = false;
+  let lossSum = 0, hasLoss = false;
+  let flashSum = 0, hasFlash = false;
+
+  blockHours.forEach(h => {
+    if (h.plan !== null && h.plan !== undefined) { planSum += Number(h.plan); hasPlan = true; }
+    if (h.achievement !== null && h.achievement !== undefined) { achSum += Number(h.achievement); hasAch = true; }
+    if (h.loss !== null && h.loss !== undefined) { lossSum += Number(h.loss); hasLoss = true; }
+    if (h.flashKg !== null && h.flashKg !== undefined) { flashSum += Number(h.flashKg); hasFlash = true; }
+  });
+
+  return {
+    planDisplay: hasPlan ? planSum : '—',
+    achDisplay: hasAch ? achSum : '—',
+    lossDisplay: hasLoss ? lossSum : '—',
+    flashDisplay: hasFlash ? Number(flashSum.toFixed(2)) : '—',
+    planSum: hasPlan ? planSum : 0,
+    achSum: hasAch ? achSum : 0,
+    lossSum: hasLoss ? lossSum : 0,
+    flashSum: hasFlash ? flashSum : 0
+  };
 }
 
 // Recalculate Subtotals without full table rebuild
@@ -522,10 +612,10 @@ function recalculateSubtotals() {
     const achEl = document.getElementById(`subtotalAch-${blockIdx}`);
     const lossEl = document.getElementById(`subtotalLoss-${blockIdx}`);
     const flashEl = document.getElementById(`subtotalFlash-${blockIdx}`);
-    if (planEl) planEl.textContent = stats.plan;
-    if (achEl) achEl.textContent = stats.achievement;
-    if (lossEl) lossEl.textContent = stats.loss;
-    if (flashEl) flashEl.textContent = stats.flashKg;
+    if (planEl) planEl.textContent = stats.planDisplay;
+    if (achEl) achEl.textContent = stats.achDisplay;
+    if (lossEl) lossEl.textContent = stats.lossDisplay;
+    if (flashEl) flashEl.textContent = stats.flashDisplay;
   });
   renderGrandTotalRow();
 }
@@ -533,19 +623,27 @@ function recalculateSubtotals() {
 // Render Footer Grand Total Row
 function renderGrandTotalRow() {
   const tfoot = document.getElementById('tableFoot');
-  const totalPlan = state.hours.reduce((acc, h) => acc + (Number(h.plan) || 0), 0);
-  const totalAch = state.hours.reduce((acc, h) => acc + (Number(h.achievement) || 0), 0);
-  const totalLoss = state.hours.reduce((acc, h) => acc + (Number(h.loss) || 0), 0);
-  const totalFlash = Number(state.hours.reduce((acc, h) => acc + (Number(h.flashKg) || 0), 0).toFixed(2));
+
+  let totalPlan = 0, hasPlan = false;
+  let totalAch = 0, hasAch = false;
+  let totalLoss = 0, hasLoss = false;
+  let totalFlash = 0, hasFlash = false;
+
+  state.hours.forEach(h => {
+    if (h.plan !== null && h.plan !== undefined) { totalPlan += Number(h.plan); hasPlan = true; }
+    if (h.achievement !== null && h.achievement !== undefined) { totalAch += Number(h.achievement); hasAch = true; }
+    if (h.loss !== null && h.loss !== undefined) { totalLoss += Number(h.loss); hasLoss = true; }
+    if (h.flashKg !== null && h.flashKg !== undefined) { totalFlash += Number(h.flashKg); hasFlash = true; }
+  });
 
   tfoot.innerHTML = `
     <tr class="grand-total-row">
       <td class="total-title">TOTAL</td>
-      <td class="total-val">${totalPlan}</td>
-      <td class="total-val">${totalAch}</td>
-      <td class="total-val">${totalLoss}</td>
+      <td class="total-val">${hasPlan ? totalPlan : '—'}</td>
+      <td class="total-val">${hasAch ? totalAch : '—'}</td>
+      <td class="total-val">${hasLoss ? totalLoss : '—'}</td>
       <td></td>
-      <td class="total-val">${totalFlash}</td>
+      <td class="total-val">${hasFlash ? Number(totalFlash.toFixed(2)) : '—'}</td>
       <td colspan="4" style="background:#000;"></td>
     </tr>
   `;
@@ -553,20 +651,28 @@ function renderGrandTotalRow() {
 
 // Update Top KPI Cards
 function updateKPISummaries() {
-  const totalPlan = state.hours.reduce((acc, h) => acc + (Number(h.plan) || 0), 0);
-  const totalAch = state.hours.reduce((acc, h) => acc + (Number(h.achievement) || 0), 0);
-  const totalLoss = state.hours.reduce((acc, h) => acc + (Number(h.loss) || 0), 0);
-  const totalFlash = Number(state.hours.reduce((acc, h) => acc + (Number(h.flashKg) || 0), 0).toFixed(2));
-  const rate = totalPlan > 0 ? ((totalAch / totalPlan) * 100).toFixed(1) : '0.0';
+  let totalPlan = 0, hasPlan = false;
+  let totalAch = 0, hasAch = false;
+  let totalLoss = 0, hasLoss = false;
+  let totalFlash = 0, hasFlash = false;
 
-  document.getElementById('kpiTotalPlan').innerHTML = `${totalPlan} <small style="font-size:0.6em;color:#94a3b8">Pcs</small>`;
-  document.getElementById('kpiTotalAch').innerHTML = `${totalAch} <small style="font-size:0.6em;color:#94a3b8">Pcs</small>`;
-  document.getElementById('kpiTotalLoss').innerHTML = `${totalLoss} <small style="font-size:0.6em;color:#94a3b8">Pcs</small>`;
-  document.getElementById('kpiTotalFlash').innerHTML = `${totalFlash} <small style="font-size:0.6em;color:#94a3b8">Kg</small>`;
-  document.getElementById('kpiAchRate').textContent = `${rate}%`;
+  state.hours.forEach(h => {
+    if (h.plan !== null && h.plan !== undefined) { totalPlan += Number(h.plan); hasPlan = true; }
+    if (h.achievement !== null && h.achievement !== undefined) { totalAch += Number(h.achievement); hasAch = true; }
+    if (h.loss !== null && h.loss !== undefined) { totalLoss += Number(h.loss); hasLoss = true; }
+    if (h.flashKg !== null && h.flashKg !== undefined) { totalFlash += Number(h.flashKg); hasFlash = true; }
+  });
+
+  const rate = (hasPlan && totalPlan > 0) ? ((totalAch / totalPlan) * 100).toFixed(1) + '%' : '—';
+
+  document.getElementById('kpiTotalPlan').innerHTML = hasPlan ? `${totalPlan} <small style="font-size:0.6em;color:#94a3b8">Pcs</small>` : '—';
+  document.getElementById('kpiTotalAch').innerHTML = hasAch ? `${totalAch} <small style="font-size:0.6em;color:#94a3b8">Pcs</small>` : '—';
+  document.getElementById('kpiTotalLoss').innerHTML = hasLoss ? `${totalLoss} <small style="font-size:0.6em;color:#94a3b8">Pcs</small>` : '—';
+  document.getElementById('kpiTotalFlash').innerHTML = hasFlash ? `${Number(totalFlash.toFixed(2))} <small style="font-size:0.6em;color:#94a3b8">Kg</small>` : '—';
+  document.getElementById('kpiAchRate').textContent = rate;
 }
 
-// Auto Save Handler with Debounce
+// Fast Auto-Save Trigger with 500ms Debounce
 function triggerAutoSave() {
   setSaveStatus('saving', 'Saving...');
   if (state.saveTimeout) {
@@ -574,12 +680,12 @@ function triggerAutoSave() {
   }
   state.saveTimeout = setTimeout(() => {
     saveTrackingSheet(false);
-  }, 1200);
+  }, 500);
 }
 
 // Save to MongoDB API
 async function saveTrackingSheet(isManual = false) {
-  setSaveStatus('saving', 'Saving to MongoDB...');
+  setSaveStatus('saving', 'Saving to Cloud...');
   try {
     const payload = {
       date: state.date,
@@ -596,6 +702,7 @@ async function saveTrackingSheet(isManual = false) {
 
     const json = await res.json();
     if (res.ok && json.success) {
+      state.hasUnsavedChanges = false;
       setSaveStatus('saved', isManual ? 'Saved successfully!' : 'Saved');
     } else {
       setSaveStatus('error', json.error || 'Failed to save');
@@ -617,7 +724,7 @@ function setSaveStatus(status, text) {
 // Export to Excel (.xlsx) using SheetJS
 function exportToExcel() {
   if (typeof XLSX === 'undefined') {
-    alert('Excel export library not loaded. Please ensure js/xlsx.full.min.js is present.');
+    alert('Excel export library not loaded.');
     return;
   }
 
@@ -643,7 +750,6 @@ function exportToExcel() {
     'PC Number / I:R'
   ]);
 
-  // Data Rows grouped by blocks
   const blocks = [0, 1, 2, 3];
   blocks.forEach(blockIdx => {
     const blockHours = state.hours.filter(h => h.blockIndex === blockIdx);
@@ -657,11 +763,11 @@ function exportToExcel() {
         if (i === 0) {
           rows.push([
             hour.hourKey,
-            hour.plan || 0,
-            hour.achievement || 0,
-            hour.loss || 0,
+            valOrEmpty(hour.plan),
+            valOrEmpty(hour.achievement),
+            valOrEmpty(hour.loss),
             hour.defectScrap || '',
-            hour.flashKg || 0,
+            valOrEmpty(hour.flashKg),
             issue.problem || '',
             issue.rootCause || '',
             issue.containmentAction || '',
@@ -679,21 +785,19 @@ function exportToExcel() {
       }
     });
 
-    // Subtotal Row
     const subtotal = calculateBlockSubtotal(blockIdx);
     const blockLabel = (BLOCK_LABELS[state.shiftType] && BLOCK_LABELS[state.shiftType][blockIdx]) || `Subtotal Block ${blockIdx + 1}`;
     rows.push([
       blockLabel,
-      subtotal.plan,
-      subtotal.achievement,
-      subtotal.loss,
+      subtotal.planDisplay,
+      subtotal.achDisplay,
+      subtotal.lossDisplay,
       '',
-      subtotal.flashKg,
+      subtotal.flashDisplay,
       '', '', '', ''
     ]);
   });
 
-  // Grand Total Row
   const totalPlan = state.hours.reduce((acc, h) => acc + (Number(h.plan) || 0), 0);
   const totalAch = state.hours.reduce((acc, h) => acc + (Number(h.achievement) || 0), 0);
   const totalLoss = state.hours.reduce((acc, h) => acc + (Number(h.loss) || 0), 0);
@@ -712,9 +816,8 @@ function exportToExcel() {
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // Set column widths
   ws['!cols'] = [
-    { wch: 18 }, // Time
+    { wch: 16 }, // Time
     { wch: 12 }, // Plan
     { wch: 16 }, // Achievement
     { wch: 12 }, // Loss
@@ -763,14 +866,15 @@ async function openHistoryModal() {
           </div>
         `;
 
-        div.addEventListener('click', () => {
+        div.addEventListener('click', async () => {
+          if (state.hasUnsavedChanges) await saveTrackingSheet(false);
+
           state.date = item.date;
           state.shiftType = item.shiftType;
           state.shiftCrew = item.shiftCrew || 'A';
           document.getElementById('sheetDate').value = state.date;
           modal.classList.remove('open');
 
-          // Update shift button UI
           const btnDay = document.getElementById('btnDayShift');
           const btnNight = document.getElementById('btnNightShift');
           if (state.shiftType === 'DAY') {

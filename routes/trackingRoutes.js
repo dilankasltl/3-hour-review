@@ -39,11 +39,11 @@ function createDefaultHours(shiftType) {
   return template.map(item => ({
     hourKey: item.hourKey,
     blockIndex: item.blockIndex,
-    plan: 0,
-    achievement: 0,
-    loss: 0,
+    plan: null,
+    achievement: null,
+    loss: null,
     defectScrap: '',
-    flashKg: 0,
+    flashKg: null,
     issues: [
       { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
       { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
@@ -70,7 +70,6 @@ router.get('/tracking', async (req, res) => {
     let record = await TrackingSheet.findOne({ date, shiftType: normalizedShift });
 
     if (!record) {
-      // Return fresh template (not saved yet)
       return res.json({
         exists: false,
         data: {
@@ -90,7 +89,6 @@ router.get('/tracking', async (req, res) => {
     const mergedHours = defaultHours.map(def => {
       const found = existingHoursMap.get(def.hourKey);
       if (found) {
-        // Ensure at least 5 issue rows
         const currentIssues = found.issues || [];
         while (currentIssues.length < 5) {
           currentIssues.push({ problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
@@ -98,22 +96,22 @@ router.get('/tracking', async (req, res) => {
         return {
           hourKey: def.hourKey,
           blockIndex: def.blockIndex,
-          plan: found.plan ?? 0,
-          achievement: found.achievement ?? 0,
-          loss: found.loss ?? 0,
+          plan: (found.plan !== undefined && found.plan !== null) ? found.plan : null,
+          achievement: (found.achievement !== undefined && found.achievement !== null) ? found.achievement : null,
+          loss: (found.loss !== undefined && found.loss !== null) ? found.loss : null,
           defectScrap: found.defectScrap || '',
-          flashKg: found.flashKg ?? 0,
+          flashKg: (found.flashKg !== undefined && found.flashKg !== null) ? found.flashKg : null,
           issues: currentIssues
         };
       } else {
         return {
           hourKey: def.hourKey,
           blockIndex: def.blockIndex,
-          plan: 0,
-          achievement: 0,
-          loss: 0,
+          plan: null,
+          achievement: null,
+          loss: null,
           defectScrap: '',
-          flashKg: 0,
+          flashKg: null,
           issues: [
             { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
             { problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
@@ -143,6 +141,13 @@ router.get('/tracking', async (req, res) => {
   }
 });
 
+// Helper to parse nullable number
+function parseNullableNumber(val) {
+  if (val === null || val === undefined || val === '') return null;
+  const num = Number(val);
+  return isNaN(num) ? null : num;
+}
+
 // POST /api/tracking
 router.post('/tracking', async (req, res) => {
   try {
@@ -157,22 +162,31 @@ router.post('/tracking', async (req, res) => {
       return res.status(400).json({ error: 'Invalid shiftType' });
     }
 
-    // Process and ensure valid hours
-    const processedHours = (hours || []).map(h => ({
-      hourKey: h.hourKey,
-      blockIndex: Number(h.blockIndex) || 0,
-      plan: Number(h.plan) || 0,
-      achievement: Number(h.achievement) || 0,
-      loss: Number(h.loss) !== undefined ? Number(h.loss) : (Number(h.plan) || 0) - (Number(h.achievement) || 0),
-      defectScrap: String(h.defectScrap || ''),
-      flashKg: Number(h.flashKg) || 0,
-      issues: (h.issues || []).map(i => ({
-        problem: String(i.problem || ''),
-        rootCause: String(i.rootCause || ''),
-        containmentAction: String(i.containmentAction || ''),
-        pcNumber: String(i.pcNumber || '')
-      }))
-    }));
+    const processedHours = (hours || []).map(h => {
+      const plan = parseNullableNumber(h.plan);
+      const achievement = parseNullableNumber(h.achievement);
+      let loss = parseNullableNumber(h.loss);
+
+      if (loss === null && plan !== null && achievement !== null) {
+        loss = plan - achievement;
+      }
+
+      return {
+        hourKey: h.hourKey,
+        blockIndex: Number(h.blockIndex) || 0,
+        plan: plan,
+        achievement: achievement,
+        loss: loss,
+        defectScrap: String(h.defectScrap || ''),
+        flashKg: parseNullableNumber(h.flashKg),
+        issues: (h.issues || []).map(i => ({
+          problem: String(i.problem || ''),
+          rootCause: String(i.rootCause || ''),
+          containmentAction: String(i.containmentAction || ''),
+          pcNumber: String(i.pcNumber || '')
+        }))
+      };
+    });
 
     const updated = await TrackingSheet.findOneAndUpdate(
       { date, shiftType: normalizedShift },
@@ -183,7 +197,7 @@ router.post('/tracking', async (req, res) => {
           lastSavedAt: new Date()
         }
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     res.json({
@@ -208,7 +222,7 @@ router.get('/history', async (req, res) => {
       const totalPlan = (s.hours || []).reduce((acc, h) => acc + (h.plan || 0), 0);
       const totalAch = (s.hours || []).reduce((acc, h) => acc + (h.achievement || 0), 0);
       const totalLoss = (s.hours || []).reduce((acc, h) => acc + (h.loss || 0), 0);
-      const totalFlash = (s.hours || []).reduce((acc, h) => acc + (h.flashKg || 0), 0);
+      const totalFlash = Number((s.hours || []).reduce((acc, h) => acc + (h.flashKg || 0), 0).toFixed(2));
       return {
         _id: s._id,
         date: s.date,
@@ -226,6 +240,20 @@ router.get('/history', async (req, res) => {
   } catch (err) {
     console.error('Error fetching history:', err);
     res.status(500).json({ error: 'Server error fetching history' });
+  }
+});
+
+// DELETE /api/tracking - Reset / clear a day's sheet if user wants fresh
+router.delete('/tracking', async (req, res) => {
+  try {
+    const { date, shiftType } = req.query;
+    if (!date || !shiftType) {
+      return res.status(400).json({ error: 'Date and shiftType required' });
+    }
+    await TrackingSheet.deleteOne({ date, shiftType: shiftType.toUpperCase() });
+    res.json({ success: true, message: 'Cleared successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
