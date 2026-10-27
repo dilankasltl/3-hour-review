@@ -13,6 +13,30 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// MongoDB Connection Cache (works for both standalone server and Vercel serverless)
+let cachedDb = null;
+async function connectToDatabase() {
+  if (cachedDb && mongoose.connection.readyState === 1) {
+    return cachedDb;
+  }
+  cachedDb = await mongoose.connect(MONGODB_URI, {
+    bufferCommands: false
+  });
+  console.log('✅ Connected to MongoDB Atlas successfully.');
+  return cachedDb;
+}
+
+// Ensure DB connected on each API request
+app.use('/api', async (req, res, next) => {
+  try {
+    await connectToDatabase();
+    next();
+  } catch (err) {
+    console.error('Database connection error:', err.message);
+    res.status(500).json({ error: 'Database connection failed: ' + err.message });
+  }
+});
+
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -34,15 +58,18 @@ app.use((req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Connect to MongoDB and start server
-mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('✅ Connected to MongoDB Atlas successfully.');
-    app.listen(PORT, () => {
-      console.log(`🚀 3-Hour Review Server running on http://localhost:${PORT}`);
+// Start local server if run directly
+if (require.main === module || !process.env.VERCEL) {
+  connectToDatabase()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`🚀 3-Hour Review Server running on http://localhost:${PORT}`);
+      });
+    })
+    .catch(err => {
+      console.error('❌ Failed to connect to MongoDB:', err.message);
     });
-  })
-  .catch(err => {
-    console.error('❌ Failed to connect to MongoDB:', err.message);
-    process.exit(1);
-  });
+}
+
+// Export for Vercel Serverless
+module.exports = app;
