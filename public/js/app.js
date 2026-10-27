@@ -413,15 +413,31 @@ function renderTable() {
           tr.appendChild(tdFlash);
         }
 
+// Helper to auto-resize textareas so text wraps cleanly to 2nd, 3rd lines without any dots (...)
+function autoResizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.max(28, el.scrollHeight) + 'px';
+}
+
+function createIssueTextarea(val, onInputCallback) {
+  const ta = document.createElement('textarea');
+  ta.rows = 1;
+  ta.className = 'cell-textarea-row';
+  ta.value = val || '';
+  ta.addEventListener('input', (e) => {
+    autoResizeTextarea(ta);
+    onInputCallback(e.target.value);
+  });
+  // Auto-resize on initial render
+  setTimeout(() => autoResizeTextarea(ta), 0);
+  return ta;
+}
+
         // Issue Columns (1 per row)
         // 7. Problem . Issue
         const tdProblem = document.createElement('td');
-        const probInput = document.createElement('input');
-        probInput.type = 'text';
-        probInput.className = 'cell-input cell-text';
-        probInput.value = issue.problem || '';
-        probInput.addEventListener('input', (e) => {
-          issue.problem = e.target.value;
+        const probInput = createIssueTextarea(issue.problem, (val) => {
+          issue.problem = val;
           state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
@@ -430,12 +446,8 @@ function renderTable() {
 
         // 8. Root Cause
         const tdRoot = document.createElement('td');
-        const rootInput = document.createElement('input');
-        rootInput.type = 'text';
-        rootInput.className = 'cell-input cell-text';
-        rootInput.value = issue.rootCause || '';
-        rootInput.addEventListener('input', (e) => {
-          issue.rootCause = e.target.value;
+        const rootInput = createIssueTextarea(issue.rootCause, (val) => {
+          issue.rootCause = val;
           state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
@@ -444,12 +456,8 @@ function renderTable() {
 
         // 9. Containment Action
         const tdAction = document.createElement('td');
-        const actInput = document.createElement('input');
-        actInput.type = 'text';
-        actInput.className = 'cell-input cell-text';
-        actInput.value = issue.containmentAction || '';
-        actInput.addEventListener('input', (e) => {
-          issue.containmentAction = e.target.value;
+        const actInput = createIssueTextarea(issue.containmentAction, (val) => {
+          issue.containmentAction = val;
           state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
@@ -461,12 +469,8 @@ function renderTable() {
         const pcContainer = document.createElement('div');
         pcContainer.className = 'issue-row-container';
 
-        const pcInput = document.createElement('input');
-        pcInput.type = 'text';
-        pcInput.className = 'cell-input cell-text';
-        pcInput.value = issue.pcNumber || '';
-        pcInput.addEventListener('input', (e) => {
-          issue.pcNumber = e.target.value;
+        const pcInput = createIssueTextarea(issue.pcNumber, (val) => {
+          issue.pcNumber = val;
           state.hasUnsavedChanges = true;
           triggerAutoSave();
         });
