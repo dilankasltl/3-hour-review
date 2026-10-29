@@ -34,6 +34,17 @@ const SHIFT_HOURS = {
   ]
 };
 
+function formatMrName(name) {
+  let trimmed = (name || '').trim();
+  if (!trimmed) return '';
+  if (!/^mr\.?\s+/i.test(trimmed)) {
+    trimmed = 'Mr. ' + trimmed;
+  } else {
+    trimmed = trimmed.replace(/^mr\.?\s*/i, 'Mr. ');
+  }
+  return trimmed;
+}
+
 function createDefaultHours(shiftType) {
   const template = SHIFT_HOURS[shiftType] || SHIFT_HOURS.DAY;
   return template.map(item => ({
@@ -45,11 +56,11 @@ function createDefaultHours(shiftType) {
     defectScrap: '',
     flashKg: null,
     issues: [
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' }
     ]
   }));
 }
@@ -94,14 +105,16 @@ router.get('/tracking', async (req, res) => {
           problem: String(i.problem || ''),
           rootCause: String(i.rootCause || ''),
           containmentAction: String(i.containmentAction || ''),
-          pcNumber: String(i.pcNumber || '')
+          pcNumber: String(i.pcNumber || ''),
+          enteredBy: i.enteredBy ? formatMrName(i.enteredBy) : '',
+          actionTakenBy: i.actionTakenBy ? formatMrName(i.actionTakenBy) : ''
         }));
         // If hour has legacy single defectScrap and 1st issue doesn't have it, copy over
         if (found.defectScrap && currentIssues.length > 0 && !currentIssues[0].defectScrap) {
           currentIssues[0].defectScrap = found.defectScrap;
         }
         while (currentIssues.length < 5) {
-          currentIssues.push({ defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' });
+          currentIssues.push({ defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' });
         }
         return {
           hourKey: def.hourKey,
@@ -123,11 +136,11 @@ router.get('/tracking', async (req, res) => {
           defectScrap: '',
           flashKg: null,
           issues: [
-            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' }
           ]
         };
       }
@@ -194,7 +207,9 @@ router.post('/tracking', async (req, res) => {
           problem: String(i.problem || ''),
           rootCause: String(i.rootCause || ''),
           containmentAction: String(i.containmentAction || ''),
-          pcNumber: String(i.pcNumber || '')
+          pcNumber: String(i.pcNumber || ''),
+          enteredBy: i.enteredBy ? formatMrName(i.enteredBy) : '',
+          actionTakenBy: i.actionTakenBy ? formatMrName(i.actionTakenBy) : ''
         }))
       };
     });
@@ -222,6 +237,130 @@ router.post('/tracking', async (req, res) => {
   }
 });
 
+// POST /api/issue/entry - Add a new production problem/issue
+// Ensures that if multiple entries are submitted for the same hour concurrently,
+// they occupy separate ruled lines without overwriting each other.
+router.post('/issue/entry', async (req, res) => {
+  try {
+    const { date, shiftType, hourKey, problem, rootCause, containmentAction, defectScrap, pcNumber, name } = req.body;
+    if (!date || !shiftType || !hourKey || !problem || !name) {
+      return res.status(400).json({ error: 'Date, shiftType, hourKey, problem, and name are required' });
+    }
+
+    const formattedName = formatMrName(name);
+    const normalizedShift = shiftType.toUpperCase();
+
+    let sheet = await TrackingSheet.findOne({ date, shiftType: normalizedShift });
+    if (!sheet) {
+      sheet = new TrackingSheet({
+        date,
+        shiftType: normalizedShift,
+        shiftCrew: 'A',
+        hours: createDefaultHours(normalizedShift)
+      });
+    }
+
+    let hour = sheet.hours.find(h => h.hourKey === hourKey);
+    if (!hour) {
+      const template = (SHIFT_HOURS[normalizedShift] || SHIFT_HOURS.DAY).find(t => t.hourKey === hourKey);
+      const blockIndex = template ? template.blockIndex : 0;
+      hour = {
+        hourKey,
+        blockIndex,
+        plan: null,
+        achievement: null,
+        loss: null,
+        defectScrap: '',
+        flashKg: null,
+        issues: []
+      };
+      sheet.hours.push(hour);
+    }
+
+    if (!hour.issues) hour.issues = [];
+
+    // Find the first issue row that has no problem, rootCause, or action
+    let targetIssue = hour.issues.find(i => 
+      (!i.problem || i.problem.trim() === '') && 
+      (!i.rootCause || i.rootCause.trim() === '') && 
+      (!i.containmentAction || i.containmentAction.trim() === '')
+    );
+
+    const hasAction = Boolean(containmentAction && containmentAction.trim() !== '');
+
+    const newIssueData = {
+      defectScrap: defectScrap || '',
+      problem: problem.trim(),
+      rootCause: (rootCause || '').trim(),
+      containmentAction: (containmentAction || '').trim(),
+      pcNumber: pcNumber || '',
+      enteredBy: formattedName,
+      actionTakenBy: hasAction ? formattedName : '',
+      createdAt: new Date()
+    };
+
+    if (targetIssue) {
+      Object.assign(targetIssue, newIssueData);
+    } else {
+      // If all rows have problems, push a new line so concurrent submissions get their own separate line
+      hour.issues.push(newIssueData);
+    }
+
+    sheet.lastSavedAt = new Date();
+    await sheet.save();
+
+    res.json({
+      success: true,
+      message: 'Issue recorded successfully',
+      data: sheet
+    });
+  } catch (err) {
+    console.error('Error in /api/issue/entry:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/issue/update-action - Update Root Cause and/or Containment Action for an existing issue
+router.patch('/issue/update-action', async (req, res) => {
+  try {
+    const { date, shiftType, hourKey, lineIdx, rootCause, containmentAction, name } = req.body;
+    if (!date || !shiftType || !hourKey || lineIdx === undefined || !name) {
+      return res.status(400).json({ error: 'Date, shiftType, hourKey, lineIdx, and name are required' });
+    }
+
+    const formattedName = formatMrName(name);
+    const sheet = await TrackingSheet.findOne({ date, shiftType: shiftType.toUpperCase() });
+    if (!sheet) {
+      return res.status(404).json({ error: 'Sheet not found' });
+    }
+
+    const hour = (sheet.hours || []).find(h => h.hourKey === hourKey);
+    if (!hour || !hour.issues || !hour.issues[lineIdx]) {
+      return res.status(404).json({ error: 'Hour or line not found' });
+    }
+
+    const issue = hour.issues[lineIdx];
+    if (rootCause !== undefined && rootCause !== null && rootCause.trim() !== '') {
+      issue.rootCause = rootCause.trim();
+    }
+    if (containmentAction !== undefined && containmentAction !== null && containmentAction.trim() !== '') {
+      issue.containmentAction = containmentAction.trim();
+      issue.actionTakenBy = formattedName;
+    }
+    if (!issue.enteredBy) {
+      issue.enteredBy = formattedName;
+    }
+
+    sheet.lastSavedAt = new Date();
+    await sheet.save();
+
+    res.json({ success: true, message: 'Action saved successfully', issue });
+  } catch (err) {
+    console.error('Error updating issue action:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/missing-actions - Get list of issues missing containment actions across saved sheets
 router.get('/missing-actions', async (req, res) => {
   try {
@@ -245,7 +384,9 @@ router.get('/missing-actions', async (req, res) => {
               problem: issue.problem,
               rootCause: issue.rootCause || '',
               defectScrap: issue.defectScrap || '',
-              pcNumber: issue.pcNumber || ''
+              pcNumber: issue.pcNumber || '',
+              enteredBy: issue.enteredBy || '',
+              actionTakenBy: issue.actionTakenBy || ''
             });
           }
         });
@@ -259,10 +400,50 @@ router.get('/missing-actions', async (req, res) => {
   }
 });
 
+// GET /api/taken-actions - Get list of completed / taken containment actions across saved sheets
+router.get('/taken-actions', async (req, res) => {
+  try {
+    const sheets = await TrackingSheet.find({}, 'date shiftType shiftCrew hours')
+      .sort({ date: -1 });
+
+    const takenList = [];
+    sheets.forEach(sheet => {
+      (sheet.hours || []).forEach(h => {
+        (h.issues || []).forEach((issue, idx) => {
+          const problem = (issue.problem || '').trim();
+          const containmentAction = (issue.containmentAction || '').trim();
+          if (problem !== '' && containmentAction !== '') {
+            takenList.push({
+              sheetId: sheet._id,
+              date: sheet.date,
+              shiftType: sheet.shiftType,
+              shiftCrew: sheet.shiftCrew,
+              hourKey: h.hourKey,
+              lineIdx: idx,
+              problem: issue.problem,
+              rootCause: issue.rootCause || '',
+              containmentAction: issue.containmentAction,
+              defectScrap: issue.defectScrap || '',
+              pcNumber: issue.pcNumber || '',
+              enteredBy: issue.enteredBy || '',
+              actionTakenBy: issue.actionTakenBy || issue.enteredBy || ''
+            });
+          }
+        });
+      });
+    });
+
+    res.json({ success: true, count: takenList.length, taken: takenList });
+  } catch (err) {
+    console.error('Error fetching taken actions:', err);
+    res.status(500).json({ error: 'Server error fetching taken actions' });
+  }
+});
+
 // PATCH /api/containment-action - Quick update containment action for a specific hour and line
 router.patch('/containment-action', async (req, res) => {
   try {
-    const { date, shiftType, hourKey, lineIdx, containmentAction } = req.body;
+    const { date, shiftType, hourKey, lineIdx, containmentAction, name } = req.body;
     if (!date || !shiftType || !hourKey || lineIdx === undefined) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
@@ -275,6 +456,9 @@ router.patch('/containment-action', async (req, res) => {
       return res.status(404).json({ error: 'Hour or line not found' });
     }
     hour.issues[lineIdx].containmentAction = containmentAction || '';
+    if (name) {
+      hour.issues[lineIdx].actionTakenBy = formatMrName(name);
+    }
     sheet.lastSavedAt = new Date();
     await sheet.save();
     res.json({ success: true, message: 'Containment action saved successfully' });

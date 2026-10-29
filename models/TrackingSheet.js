@@ -5,7 +5,10 @@ const IssueRowSchema = new mongoose.Schema({
   problem: { type: String, default: '' },
   rootCause: { type: String, default: '' },
   containmentAction: { type: String, default: '' },
-  pcNumber: { type: String, default: '' }
+  pcNumber: { type: String, default: '' },
+  enteredBy: { type: String, default: '' },
+  actionTakenBy: { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now }
 }, { _id: false });
 
 const HourDataSchema = new mongoose.Schema({
@@ -19,11 +22,11 @@ const HourDataSchema = new mongoose.Schema({
   issues: {
     type: [IssueRowSchema],
     default: () => [
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' }
     ]
   }
 }, { _id: false });

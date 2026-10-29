@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initEventListeners();
   loadTrackingSheet();
   fetchMissingActionsFromDB();
+  fetchTakenActionsFromDB();
 });
 
 // Format today's date as YYYY-MM-DD in local time
@@ -207,6 +208,84 @@ function initEventListeners() {
     });
   }
 
+  // Enter Data Modal
+  const enterDataModal = document.getElementById('enterDataModal');
+  const btnOpenEnterData = document.getElementById('btnOpenEnterData');
+  if (btnOpenEnterData && enterDataModal) {
+    btnOpenEnterData.addEventListener('click', () => {
+      openEnterDataModal();
+    });
+  }
+  const btnCloseEnterData = document.getElementById('btnCloseEnterData');
+  const btnCancelEnterData = document.getElementById('btnCancelEnterData');
+  [btnCloseEnterData, btnCancelEnterData].forEach(btn => {
+    if (btn && enterDataModal) {
+      btn.addEventListener('click', () => {
+        enterDataModal.classList.remove('open');
+      });
+    }
+  });
+  if (enterDataModal) {
+    enterDataModal.addEventListener('click', (e) => {
+      if (e.target === enterDataModal) enterDataModal.classList.remove('open');
+    });
+  }
+
+  // Shift radio changes in Enter Data modal
+  const formShiftDay = document.getElementById('formShiftDay');
+  const formShiftNight = document.getElementById('formShiftNight');
+  if (formShiftDay && formShiftNight) {
+    formShiftDay.addEventListener('change', () => populateEnterDataHours('DAY'));
+    formShiftNight.addEventListener('change', () => populateEnterDataHours('NIGHT'));
+  }
+
+  // Enter Data Form Submit
+  const enterDataForm = document.getElementById('enterDataForm');
+  if (enterDataForm) {
+    enterDataForm.addEventListener('submit', handleEnterDataSubmit);
+  }
+
+  // Inline Action Modal
+  const inlineActionModal = document.getElementById('inlineActionModal');
+  const btnCloseInlineAction = document.getElementById('btnCloseInlineAction');
+  const btnCancelInlineAction = document.getElementById('btnCancelInlineAction');
+  [btnCloseInlineAction, btnCancelInlineAction].forEach(btn => {
+    if (btn && inlineActionModal) {
+      btn.addEventListener('click', () => {
+        inlineActionModal.classList.remove('open');
+      });
+    }
+  });
+  if (inlineActionModal) {
+    inlineActionModal.addEventListener('click', (e) => {
+      if (e.target === inlineActionModal) inlineActionModal.classList.remove('open');
+    });
+  }
+
+  // Inline Action Form Submit
+  const inlineActionForm = document.getElementById('inlineActionForm');
+  if (inlineActionForm) {
+    inlineActionForm.addEventListener('submit', handleInlineActionSubmit);
+  }
+
+  // Taken Actions Modal
+  const takenModal = document.getElementById('takenActionsModal');
+  const btnTaken = document.getElementById('btnTakenActions');
+  if (btnTaken && takenModal) {
+    btnTaken.addEventListener('click', () => {
+      openTakenActionsModal();
+    });
+  }
+  const btnCloseTaken = document.getElementById('btnCloseTakenActions');
+  if (btnCloseTaken && takenModal) {
+    btnCloseTaken.addEventListener('click', () => {
+      takenModal.classList.remove('open');
+    });
+    takenModal.addEventListener('click', (e) => {
+      if (e.target === takenModal) takenModal.classList.remove('open');
+    });
+  }
+
   // Missing Containment Actions Modal
   const missingModal = document.getElementById('missingActionsModal');
   const btnMissing = document.getElementById('btnMissingActions');
@@ -255,11 +334,11 @@ function createDefaultHours(shiftType) {
     defectScrap: '',
     flashKg: null,
     issues: [
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' },
-      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '' }
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+      { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' }
     ]
   }));
 }
@@ -294,7 +373,9 @@ async function loadTrackingSheet() {
       renderTable();
       updateKPISummaries();
       updateMissingActionsBadge();
+      updateTakenActionsBadge();
       fetchMissingActionsFromDB();
+      fetchTakenActionsFromDB();
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', json.exists ? 'Loaded from Cloud' : 'Ready (Empty)');
     } else {
@@ -302,7 +383,9 @@ async function loadTrackingSheet() {
       renderTable();
       updateKPISummaries();
       updateMissingActionsBadge();
+      updateTakenActionsBadge();
       fetchMissingActionsFromDB();
+      fetchTakenActionsFromDB();
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', 'Ready (Empty)');
     }
@@ -515,43 +598,69 @@ function renderTable() {
         }
 
         // Issue Columns (1 per row)
-        // 7. Problem . Issue
+        // 7. Problem . Issue (Read-only on ruled cells, entered via 'Enter Data' button)
         const tdProblem = document.createElement('td');
-        const tdAction = document.createElement('td');
-
-        const actInput = createIssueTextarea(issue.containmentAction, (val) => {
-          issue.containmentAction = val;
-          updateActionHighlight(issue.problem, issue.containmentAction, tdAction, actInput);
-          updateMissingActionsBadge();
-          state.hasUnsavedChanges = true;
-          triggerAutoSave();
-        });
-
-        const probInput = createIssueTextarea(issue.problem, (val) => {
-          issue.problem = val;
-          updateActionHighlight(issue.problem, issue.containmentAction, tdAction, actInput);
-          updateMissingActionsBadge();
-          state.hasUnsavedChanges = true;
-          triggerAutoSave();
-        });
-
-        updateActionHighlight(issue.problem, issue.containmentAction, tdAction, actInput);
-
-        tdProblem.appendChild(probInput);
+        const hasProb = Boolean(issue.problem && issue.problem.trim() !== '');
+        if (hasProb) {
+          const author = issue.enteredBy ? formatMrName(issue.enteredBy) : '';
+          tdProblem.innerHTML = `
+            <div class="cell-read-only-content">
+              <div class="cell-issue-text">${escapeHtml(issue.problem)}</div>
+              ${author ? `<div class="cell-author-tag">👤 ${escapeHtml(author)}</div>` : ''}
+            </div>
+          `;
+        } else {
+          tdProblem.innerHTML = '';
+        }
         tr.appendChild(tdProblem);
 
-        // 8. Root Cause
+        // 8. Root Cause (Read-only, or button to enter cause if problem exists)
         const tdRoot = document.createElement('td');
-        const rootInput = createIssueTextarea(issue.rootCause, (val) => {
-          issue.rootCause = val;
-          state.hasUnsavedChanges = true;
-          triggerAutoSave();
-        });
-        tdRoot.appendChild(rootInput);
+        const hasRoot = Boolean(issue.rootCause && issue.rootCause.trim() !== '');
+        if (hasRoot) {
+          tdRoot.innerHTML = `
+            <div class="cell-read-only-content">
+              <div class="cell-issue-text">${escapeHtml(issue.rootCause)}</div>
+            </div>
+          `;
+        } else if (hasProb) {
+          tdRoot.innerHTML = `
+            <div class="cell-read-only-content" style="align-items: center; justify-content: center;">
+              <button type="button" class="btn-table-inline btn-inline-cause" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">
+                + Cause
+              </button>
+            </div>
+          `;
+        } else {
+          tdRoot.innerHTML = '';
+        }
         tr.appendChild(tdRoot);
 
-        // 9. Containment Action
-        tdAction.appendChild(actInput);
+        // 9. Containment Action (Read-only, or alert button if missing)
+        const tdAction = document.createElement('td');
+        const hasAct = Boolean(issue.containmentAction && issue.containmentAction.trim() !== '');
+        if (hasAct) {
+          const actionAuthor = issue.actionTakenBy ? formatMrName(issue.actionTakenBy) : (issue.enteredBy ? formatMrName(issue.enteredBy) : '');
+          tdAction.classList.remove('cell-missing-action');
+          tdAction.innerHTML = `
+            <div class="cell-read-only-content">
+              <div class="cell-issue-text cell-action-success">✅ ${escapeHtml(issue.containmentAction)}</div>
+              ${actionAuthor ? `<div class="cell-author-tag">👤 ${escapeHtml(actionAuthor)}</div>` : ''}
+            </div>
+          `;
+        } else if (hasProb) {
+          tdAction.classList.add('cell-missing-action');
+          tdAction.innerHTML = `
+            <div class="cell-read-only-content" style="align-items: center; justify-content: center;">
+              <button type="button" class="btn-table-inline btn-inline-action" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">
+                ⚠️ + Enter Action
+              </button>
+            </div>
+          `;
+        } else {
+          tdAction.classList.remove('cell-missing-action');
+          tdAction.innerHTML = '';
+        }
         tr.appendChild(tdAction);
 
         // 10. PC Number / I:R
@@ -621,8 +730,18 @@ function renderTable() {
     });
   });
 
+  // Attach inline action button handlers (+ Cause and + Enter Action)
+  document.querySelectorAll('.btn-inline-action, .btn-inline-cause').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const hourKey = btn.dataset.hourKey;
+      const lineIdx = Number(btn.dataset.lineIdx);
+      openInlineActionModal(hourKey, lineIdx);
+    });
+  });
+
   renderGrandTotalRow();
   updateMissingActionsBadge();
+  updateTakenActionsBadge();
 }
 
 // Compute Loss for an hour: Loss = Plan - Achievement (only when at least Plan or Ach is entered)
@@ -1299,4 +1418,393 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// Global cached taken actions
+let dbTakenActionsCache = [];
+
+// Fetch taken actions from MongoDB
+async function fetchTakenActionsFromDB() {
+  try {
+    const res = await fetch('/api/taken-actions');
+    const json = await res.json();
+    if (json.success && Array.isArray(json.taken)) {
+      dbTakenActionsCache = json.taken;
+      updateTakenActionsBadge();
+    }
+  } catch (err) {
+    console.error('Error fetching taken actions:', err);
+  }
+}
+
+// Update the badge count for completed / taken actions
+function updateTakenActionsBadge() {
+  const badge = document.getElementById('takenActionsCount');
+  if (badge) {
+    badge.textContent = dbTakenActionsCache.length;
+  }
+}
+
+// Populate the hour dropdown in Enter Data modal
+function populateEnterDataHours(shiftType) {
+  const select = document.getElementById('formHourSelect');
+  if (!select) return;
+  select.innerHTML = '';
+  const template = SHIFT_TEMPLATES[shiftType] || SHIFT_TEMPLATES.DAY;
+  template.forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.hourKey;
+    opt.textContent = item.hourKey;
+    select.appendChild(opt);
+  });
+}
+
+// Open the Enter Data Modal
+function openEnterDataModal(preselectedHourKey = null) {
+  const modal = document.getElementById('enterDataModal');
+  if (!modal) return;
+
+  const dateInput = document.getElementById('formDataDate');
+  if (dateInput) {
+    dateInput.value = state.date || getTodayDateString();
+  }
+
+  const formShiftDay = document.getElementById('formShiftDay');
+  const formShiftNight = document.getElementById('formShiftNight');
+  if (state.shiftType === 'NIGHT') {
+    if (formShiftNight) formShiftNight.checked = true;
+    populateEnterDataHours('NIGHT');
+  } else {
+    if (formShiftDay) formShiftDay.checked = true;
+    populateEnterDataHours('DAY');
+  }
+
+  const hourSelect = document.getElementById('formHourSelect');
+  if (hourSelect && preselectedHourKey) {
+    hourSelect.value = preselectedHourKey;
+  }
+
+  // Pre-fill operator name from localStorage if available
+  const nameInput = document.getElementById('formPersonName');
+  if (nameInput) {
+    let savedName = localStorage.getItem('savedOperatorName') || '';
+    if (savedName.startsWith('Mr. ')) savedName = savedName.substring(4);
+    nameInput.value = savedName;
+  }
+
+  const formProblem = document.getElementById('formProblem');
+  if (formProblem) formProblem.value = '';
+  const formRootCause = document.getElementById('formRootCause');
+  if (formRootCause) formRootCause.value = '';
+  const formContainmentAction = document.getElementById('formContainmentAction');
+  if (formContainmentAction) formContainmentAction.value = '';
+  const formDefectScrap = document.getElementById('formDefectScrap');
+  if (formDefectScrap) formDefectScrap.value = '';
+  const formPcNumber = document.getElementById('formPcNumber');
+  if (formPcNumber) formPcNumber.value = '';
+
+  modal.classList.add('open');
+}
+
+// Handle submission of Enter Data modal
+async function handleEnterDataSubmit(e) {
+  e.preventDefault();
+  const nameInput = document.getElementById('formPersonName');
+  const dateInput = document.getElementById('formDataDate');
+  const hourSelect = document.getElementById('formHourSelect');
+  const formProblem = document.getElementById('formProblem');
+  const formRootCause = document.getElementById('formRootCause');
+  const formContainmentAction = document.getElementById('formContainmentAction');
+  const formDefectScrap = document.getElementById('formDefectScrap');
+  const formPcNumber = document.getElementById('formPcNumber');
+
+  const shiftRadio = document.querySelector('input[name="formShiftType"]:checked');
+  const shiftType = shiftRadio ? shiftRadio.value : 'DAY';
+
+  const rawName = (nameInput ? nameInput.value : '').trim();
+  if (!rawName) {
+    alert('Please enter your Name (e.g. Mr. Kamal).');
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  const problem = (formProblem ? formProblem.value : '').trim();
+  if (!problem) {
+    alert('Please enter the Problem / Issue description.');
+    if (formProblem) formProblem.focus();
+    return;
+  }
+
+  const formattedName = formatMrName(rawName);
+  localStorage.setItem('savedOperatorName', formattedName);
+
+  const payload = {
+    date: dateInput ? dateInput.value : state.date,
+    shiftType: shiftType,
+    hourKey: hourSelect ? hourSelect.value : '',
+    problem: problem,
+    rootCause: formRootCause ? formRootCause.value.trim() : '',
+    containmentAction: formContainmentAction ? formContainmentAction.value.trim() : '',
+    defectScrap: formDefectScrap ? formDefectScrap.value.trim() : '',
+    pcNumber: formPcNumber ? formPcNumber.value.trim() : '',
+    name: formattedName
+  };
+
+  const btnSubmit = document.getElementById('btnSubmitEnterData');
+  if (btnSubmit) {
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Saving...';
+  }
+
+  try {
+    const res = await fetch('/api/issue/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+
+    if (res.ok && json.success) {
+      const modal = document.getElementById('enterDataModal');
+      if (modal) modal.classList.remove('open');
+
+      // If entered for currently active sheet, reload it
+      if (payload.date === state.date && payload.shiftType === state.shiftType) {
+        await loadTrackingSheet();
+      }
+
+      await fetchMissingActionsFromDB();
+      await fetchTakenActionsFromDB();
+    } else {
+      alert('Error saving issue: ' + (json.error || 'Server error'));
+    }
+  } catch (err) {
+    alert('Network error saving issue: ' + err.message);
+  } finally {
+    if (btnSubmit) {
+      btnSubmit.disabled = false;
+      btnSubmit.textContent = '💾 Submit Entry';
+    }
+  }
+}
+
+// Open Inline Action Modal (when user clicks "+ Cause" or "⚠️ + Enter Action" on the table)
+function openInlineActionModal(hourKey, lineIdx) {
+  const modal = document.getElementById('inlineActionModal');
+  if (!modal) return;
+
+  const hourData = (state.hours || []).find(h => h.hourKey === hourKey);
+  if (!hourData || !hourData.issues || !hourData.issues[lineIdx]) return;
+
+  const issue = hourData.issues[lineIdx];
+
+  document.getElementById('inlineActionHourKey').value = hourKey;
+  document.getElementById('inlineActionLineIdx').value = lineIdx;
+
+  const dateBadge = document.getElementById('inlineActionDateBadge');
+  if (dateBadge) dateBadge.textContent = '📅 ' + state.date;
+  const hourBadge = document.getElementById('inlineActionHourBadge');
+  if (hourBadge) hourBadge.textContent = '⏰ ' + hourKey + ' - Line #' + (Number(lineIdx) + 1);
+  const authorBadge = document.getElementById('inlineActionAuthorBadge');
+  if (authorBadge) authorBadge.textContent = '👤 ' + (issue.enteredBy ? formatMrName(issue.enteredBy) : 'Mr. Operator');
+
+  const problemText = document.getElementById('inlineActionProblemText');
+  if (problemText) problemText.textContent = issue.problem || '—';
+
+  const nameInput = document.getElementById('inlineActionName');
+  if (nameInput) {
+    let savedName = localStorage.getItem('savedOperatorName') || '';
+    if (savedName.startsWith('Mr. ')) savedName = savedName.substring(4);
+    nameInput.value = savedName;
+  }
+
+  const rootCauseInput = document.getElementById('inlineActionRootCause');
+  if (rootCauseInput) rootCauseInput.value = issue.rootCause || '';
+
+  const containmentInput = document.getElementById('inlineActionContainment');
+  if (containmentInput) {
+    containmentInput.value = issue.containmentAction || '';
+    containmentInput.focus();
+  }
+
+  modal.classList.add('open');
+}
+
+// Handle Inline Action Form Submit
+async function handleInlineActionSubmit(e) {
+  e.preventDefault();
+  const hourKey = document.getElementById('inlineActionHourKey').value;
+  const lineIdx = Number(document.getElementById('inlineActionLineIdx').value);
+  const nameInput = document.getElementById('inlineActionName');
+  const rootCauseInput = document.getElementById('inlineActionRootCause');
+  const containmentInput = document.getElementById('inlineActionContainment');
+
+  const rawName = (nameInput ? nameInput.value : '').trim();
+  if (!rawName) {
+    alert('Please enter your Name (e.g. Mr. Kamal).');
+    if (nameInput) nameInput.focus();
+    return;
+  }
+
+  const actionVal = (containmentInput ? containmentInput.value : '').trim();
+  const rootVal = (rootCauseInput ? rootCauseInput.value : '').trim();
+
+  if (!actionVal && !rootVal) {
+    alert('Please enter Containment Action or Root Cause.');
+    return;
+  }
+
+  const formattedName = formatMrName(rawName);
+  localStorage.setItem('savedOperatorName', formattedName);
+
+  const btnSave = document.getElementById('btnSaveInlineAction');
+  if (btnSave) {
+    btnSave.disabled = true;
+    btnSave.textContent = 'Saving...';
+  }
+
+  try {
+    const res = await fetch('/api/issue/update-action', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        date: state.date,
+        shiftType: state.shiftType,
+        hourKey: hourKey,
+        lineIdx: lineIdx,
+        rootCause: rootVal,
+        containmentAction: actionVal,
+        name: formattedName
+      })
+    });
+
+    const json = await res.json();
+    if (res.ok && json.success) {
+      const modal = document.getElementById('inlineActionModal');
+      if (modal) modal.classList.remove('open');
+
+      // Update in memory
+      const hourData = (state.hours || []).find(h => h.hourKey === hourKey);
+      if (hourData && hourData.issues && hourData.issues[lineIdx]) {
+        if (rootVal) hourData.issues[lineIdx].rootCause = rootVal;
+        if (actionVal) {
+          hourData.issues[lineIdx].containmentAction = actionVal;
+          hourData.issues[lineIdx].actionTakenBy = formattedName;
+        }
+      }
+
+      renderTable();
+      await fetchMissingActionsFromDB();
+      await fetchTakenActionsFromDB();
+    } else {
+      alert('Error saving action: ' + (json.error || 'Server error'));
+    }
+  } catch (err) {
+    alert('Network error saving action: ' + err.message);
+  } finally {
+    if (btnSave) {
+      btnSave.disabled = false;
+      btnSave.textContent = '💾 Save Action';
+    }
+  }
+}
+
+// Open Taken Actions Modal
+async function openTakenActionsModal() {
+  const modal = document.getElementById('takenActionsModal');
+  if (!modal) return;
+  modal.classList.add('open');
+
+  const listEl = document.getElementById('takenActionsList');
+  if (!listEl) return;
+  listEl.innerHTML = '<p style="text-align: center; color: #94a3b8; padding: 30px;">Loading completed containment actions from MongoDB...</p>';
+
+  try {
+    const res = await fetch('/api/taken-actions');
+    const json = await res.json();
+
+    if (!json.success || !json.taken || json.taken.length === 0) {
+      listEl.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px; color: #64748b;">
+          <div style="font-size: 2.5rem; margin-bottom: 8px;">📋</div>
+          <div style="font-weight: 800; font-size: 1.1rem;">No completed containment actions recorded yet.</div>
+          <div style="color: #94a3b8; font-size: 0.85rem; margin-top: 4px;">Completed actions will appear here once containment actions are entered.</div>
+        </div>
+      `;
+      return;
+    }
+
+    dbTakenActionsCache = json.taken;
+    updateTakenActionsBadge();
+
+    listEl.innerHTML = '';
+    json.taken.forEach(item => {
+      const isDay = item.shiftType === 'DAY';
+      const shiftBadge = isDay ? '☀️ DAY' : '🌙 NIGHT';
+      const isCurrent = (item.date === state.date && item.shiftType === state.shiftType);
+
+      const card = document.createElement('div');
+      card.className = 'taken-item-card';
+
+      card.innerHTML = `
+        <div class="missing-header-row">
+          <div class="missing-badges">
+            <span class="badge-info badge-date" style="font-weight: 900; font-size: 0.82rem;">📅 ${item.date}</span>
+            <span class="badge-info">${shiftBadge} (Crew ${item.shiftCrew || 'A'})</span>
+            <span class="badge-info badge-hour">⏰ ${item.hourKey} - Line #${item.lineIdx + 1}</span>
+            ${isCurrent ? '<span class="badge-info" style="background:#10b981; color:#fff; font-weight:800;">ACTIVE SHEET</span>' : ''}
+          </div>
+          <div>
+            ${!isCurrent ? '<button type="button" class="btn-jump-sheet" title="Open this sheet">🔍 Open Sheet</button>' : ''}
+          </div>
+        </div>
+        <div class="missing-body-grid">
+          <div>
+            <div class="missing-field-label">Problem . Issue:</div>
+            <div class="missing-field-val">${escapeHtml(item.problem)}</div>
+            ${item.enteredBy ? `<div class="cell-author-tag" style="margin-top:4px;">👤 Logged by: ${escapeHtml(formatMrName(item.enteredBy))}</div>` : ''}
+          </div>
+          <div>
+            <div class="missing-field-label">Root Cause:</div>
+            <div class="missing-field-val">${escapeHtml(item.rootCause || '—')}</div>
+          </div>
+        </div>
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 8px 12px;">
+          <div class="missing-field-label" style="color: #047857;">Containment Action Taken:</div>
+          <div style="font-size: 0.92rem; font-weight: 850; color: #065f46; word-break: break-word;">
+            ✅ ${escapeHtml(item.containmentAction)}
+          </div>
+          ${item.actionTakenBy ? `<div class="cell-author-tag" style="color: #047857; margin-top: 4px;">👤 Action by: ${escapeHtml(formatMrName(item.actionTakenBy))}</div>` : ''}
+        </div>
+      `;
+
+      const btnJump = card.querySelector('.btn-jump-sheet');
+      if (btnJump) {
+        btnJump.addEventListener('click', async () => {
+          if (state.hasUnsavedChanges) await saveTrackingSheet(false);
+          state.date = item.date;
+          state.shiftType = item.shiftType;
+          state.shiftCrew = item.shiftCrew || 'A';
+          document.getElementById('sheetDate').value = state.date;
+
+          const btnDay = document.getElementById('btnDayShift');
+          const btnNight = document.getElementById('btnNightShift');
+          if (state.shiftType === 'DAY') {
+            btnDay.classList.add('active', 'day-shift');
+            btnNight.classList.remove('active', 'night-shift');
+          } else {
+            btnNight.classList.add('active', 'night-shift');
+            btnDay.classList.remove('active', 'day-shift');
+          }
+
+          modal.classList.remove('open');
+          await loadTrackingSheet();
+        });
+      }
+
+      listEl.appendChild(card);
+    });
+  } catch (err) {
+    listEl.innerHTML = `<p style="text-align: center; color: #dc2626; padding: 20px;">Error: ${err.message}</p>`;
+  }
 }

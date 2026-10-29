@@ -53,6 +53,13 @@
             </div>
           </div>
 
+          <!-- Enter Data Button (Right next to Shift) -->
+          <div class="control-group">
+            <button type="button" class="btn btn-primary" id="btnOpenEnterData" style="font-weight: 850; padding: 6px 14px; background: linear-gradient(135deg, #2563eb, #1d4ed8); box-shadow: 0 2px 6px rgba(37,99,235,0.4); display: flex; align-items: center; gap: 6px;" title="Enter Production Problem / Issue">
+              ✍️ Enter Data
+            </button>
+          </div>
+
           <!-- Crew (A, B, C) -->
           <div class="control-group">
             <span class="control-label">Crew:</span>
@@ -67,6 +74,9 @@
         <div class="controls-right">
           <button type="button" class="btn btn-warning" id="btnMissingActions" title="View problems with missing containment actions">
             ⚠️ Missing Actions <span class="badge-pulse" id="missingActionsCount">0</span>
+          </button>
+          <button type="button" class="btn btn-success" id="btnTakenActions" title="View completed containment actions">
+            ✅ Actions Taken <span class="badge-count" id="takenActionsCount">0</span>
           </button>
           <button type="button" class="btn btn-secondary" id="btnPrint" title="Print this tracking sheet">
             🖨️ Print
@@ -165,6 +175,161 @@
         </div>
         <div class="missing-actions-container" id="missingActionsList">
           <!-- Loaded dynamically by app.js -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enter Data Modal -->
+  <div class="modal-overlay" id="enterDataModal">
+    <div class="modal-card modal-lg">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1e3a8a, #2563eb);">
+        <div class="modal-title">✍️ Enter Production Problem / Action</div>
+        <button type="button" class="modal-close" id="btnCloseEnterData">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="enterDataForm" class="modal-form-grid">
+          
+          <!-- Name & Date -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label" for="formPersonName">Your Name (Mr. ...): <span class="required-star">*</span></label>
+              <div class="input-with-prefix">
+                <span class="input-prefix">Mr.</span>
+                <input type="text" id="formPersonName" class="form-input" placeholder="Kamal Perera" required>
+              </div>
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label" for="formDataDate">Date: <span class="required-star">*</span></label>
+              <input type="date" id="formDataDate" class="form-input" required>
+            </div>
+          </div>
+
+          <!-- Shift & Hour Key -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label">Shift:</label>
+              <div class="shift-radio-group">
+                <label class="radio-label">
+                  <input type="radio" name="formShiftType" value="DAY" checked id="formShiftDay">
+                  <span>☀️ DAY (07:00 - 19:00)</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" name="formShiftType" value="NIGHT" id="formShiftNight">
+                  <span>🌙 NIGHT (19:00 - 07:00)</span>
+                </label>
+              </div>
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label" for="formHourSelect">Time Range (Hour): <span class="required-star">*</span></label>
+              <select id="formHourSelect" class="form-select" required>
+                <!-- Populated dynamically based on Shift -->
+              </select>
+            </div>
+          </div>
+
+          <!-- Problem / Issue -->
+          <div class="form-group">
+            <label class="form-label" for="formProblem">Problem . Issue: <span class="required-star">*</span></label>
+            <textarea id="formProblem" class="form-textarea" rows="2" placeholder="Describe the production problem or issue in detail..." required></textarea>
+          </div>
+
+          <!-- Root Cause -->
+          <div class="form-group">
+            <label class="form-label" for="formRootCause">Root Cause:</label>
+            <textarea id="formRootCause" class="form-textarea" rows="2" placeholder="Root cause identified (optional if currently investigating)..."></textarea>
+          </div>
+
+          <!-- Containment Action -->
+          <div class="form-group">
+            <label class="form-label" for="formContainmentAction">Containment Action:</label>
+            <textarea id="formContainmentAction" class="form-textarea" rows="2" placeholder="Containment action taken (leave empty if pending)..."></textarea>
+          </div>
+
+          <!-- Defect / Scrap & PC Number (Optional) -->
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label class="form-label" for="formDefectScrap">Defect / Scrap:</label>
+              <input type="text" id="formDefectScrap" class="form-input" placeholder="e.g. 5 pcs blotted / cut">
+            </div>
+            <div class="form-group flex-1">
+              <label class="form-label" for="formPcNumber">PC Number / I:R:</label>
+              <input type="text" id="formPcNumber" class="form-input" placeholder="e.g. PC-104">
+            </div>
+          </div>
+
+          <div class="form-actions-footer">
+            <button type="button" class="btn btn-secondary" id="btnCancelEnterData">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btnSubmitEnterData">💾 Submit Entry</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inline Add Cause / Containment Action Modal -->
+  <div class="modal-overlay" id="inlineActionModal">
+    <div class="modal-card">
+      <div class="modal-header" style="background: linear-gradient(135deg, #0f766e, #0d9488);">
+        <div class="modal-title">✍️ Enter Root Cause & Containment Action</div>
+        <button type="button" class="modal-close" id="btnCloseInlineAction">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="inlineActionForm" class="modal-form-grid">
+          <input type="hidden" id="inlineActionHourKey">
+          <input type="hidden" id="inlineActionLineIdx">
+
+          <!-- Problem Context Display -->
+          <div class="problem-display-card">
+            <div class="problem-meta-badges">
+              <span class="badge-info" id="inlineActionDateBadge">📅 2026-10-29</span>
+              <span class="badge-info" id="inlineActionHourBadge">⏰ 07:00 - 08:00</span>
+              <span class="badge-info" id="inlineActionAuthorBadge">👤 Mr. Operator</span>
+            </div>
+            <div class="problem-display-title">Problem . Issue:</div>
+            <div class="problem-display-content" id="inlineActionProblemText">—</div>
+          </div>
+
+          <!-- Name -->
+          <div class="form-group">
+            <label class="form-label" for="inlineActionName">Your Name (Mr. ...): <span class="required-star">*</span></label>
+            <div class="input-with-prefix">
+              <span class="input-prefix">Mr.</span>
+              <input type="text" id="inlineActionName" class="form-input" placeholder="Nimal Silva" required>
+            </div>
+          </div>
+
+          <!-- Root Cause -->
+          <div class="form-group">
+            <label class="form-label" for="inlineActionRootCause">Root Cause:</label>
+            <textarea id="inlineActionRootCause" class="form-textarea" rows="2" placeholder="Identified root cause..."></textarea>
+          </div>
+
+          <!-- Containment Action -->
+          <div class="form-group">
+            <label class="form-label" for="inlineActionContainment">Containment Action: <span class="required-star">*</span></label>
+            <textarea id="inlineActionContainment" class="form-textarea" rows="2" placeholder="Enter containment action taken..." required></textarea>
+          </div>
+
+          <div class="form-actions-footer">
+            <button type="button" class="btn btn-secondary" id="btnCancelInlineAction">Cancel</button>
+            <button type="submit" class="btn btn-success" id="btnSaveInlineAction">💾 Save Action</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions Taken / Resolved Actions Modal -->
+  <div class="modal-overlay" id="takenActionsModal">
+    <div class="modal-card modal-lg">
+      <div class="modal-header" style="background: linear-gradient(135deg, #065f46, #059669);">
+        <div class="modal-title">✅ Completed Containment Actions</div>
+        <button type="button" class="modal-close" id="btnCloseTakenActions">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="taken-actions-container" id="takenActionsList">
+          <!-- Populated dynamically by app.js -->
         </div>
       </div>
     </div>
