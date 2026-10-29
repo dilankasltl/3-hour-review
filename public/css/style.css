@@ -605,6 +605,60 @@ html, body {
   border-color: #94a3b8;
 }
 
+/* Enter Problem button on empty table cells */
+.btn-enter-problem {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px dashed #3b82f6;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-enter-problem:hover {
+  background: #dbeafe;
+  border-color: #1d4ed8;
+  color: #1e40af;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
+}
+
+/* Delete problem icon button */
+.btn-delete-issue {
+  background: transparent;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  line-height: 1;
+  transition: all 0.15s ease;
+  opacity: 0.55;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.btn-delete-issue:hover {
+  opacity: 1;
+  background: #fee2e2;
+  transform: scale(1.15);
+}
+
+.cell-issue-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  gap: 6px;
+}
+
 /* Defect Textarea */
 .cell-textarea {
   width: 100%;

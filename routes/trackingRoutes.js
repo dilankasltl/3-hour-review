@@ -363,6 +363,50 @@ router.post('/issue/entry', async (req, res) => {
   }
 });
 
+// DELETE /api/issue - Delete a problem/issue row
+router.delete('/issue', async (req, res) => {
+  try {
+    const { date, shiftType, hourKey, lineIdx } = req.body;
+    if (!date || !shiftType || !hourKey || lineIdx === undefined) {
+      return res.status(400).json({ error: 'Date, shiftType, hourKey, and lineIdx are required' });
+    }
+
+    const sheet = await TrackingSheet.findOne({ date, shiftType: shiftType.toUpperCase() });
+    if (!sheet) {
+      return res.status(404).json({ error: 'Sheet not found' });
+    }
+
+    const hour = (sheet.hours || []).find(h => h.hourKey === hourKey);
+    if (!hour || !hour.issues || !hour.issues[lineIdx]) {
+      return res.status(404).json({ error: 'Hour or line not found' });
+    }
+
+    // If extra line beyond 5, remove it completely
+    if (hour.issues.length > 5) {
+      hour.issues.splice(lineIdx, 1);
+    } else {
+      // Clear this slot to empty so it remains one of the 5 standard ruled lines
+      hour.issues[lineIdx].problem = '';
+      hour.issues[lineIdx].rootCause = '';
+      hour.issues[lineIdx].containmentAction = '';
+      hour.issues[lineIdx].defectScrap = '';
+      hour.issues[lineIdx].pcNumber = '';
+      hour.issues[lineIdx].enteredBy = '';
+      hour.issues[lineIdx].actionTakenBy = '';
+      hour.issues[lineIdx].createdAt = new Date();
+    }
+
+    sheet.lastSavedAt = new Date();
+    sheet.markModified('hours');
+    await sheet.save();
+
+    res.json({ success: true, message: 'Issue deleted successfully', sheet });
+  } catch (err) {
+    console.error('Error deleting issue:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/issue/update-action - Update Root Cause and/or Containment Action for an existing issue
 router.patch('/issue/update-action', async (req, res) => {
   try {

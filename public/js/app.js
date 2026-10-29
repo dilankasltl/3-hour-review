@@ -610,56 +610,74 @@ function renderTable() {
         }
 
         // Issue Columns (1 per row)
-        // 7. Problem . Issue (Read-only on ruled cells, entered via 'Enter Data' button)
+        // 7. Problem . Issue (Read-only on ruled cells, entered via 'Enter Data' modal)
         const tdProblem = document.createElement('td');
         const hasProb = Boolean(issue.problem && issue.problem.trim() !== '');
         if (hasProb) {
           const author = issue.enteredBy ? formatMrName(issue.enteredBy) : '';
           tdProblem.innerHTML = `
             <div class="cell-read-only-content">
-              <div class="cell-issue-text">${escapeHtml(issue.problem)}</div>
+              <div class="cell-issue-header-row">
+                <div class="cell-issue-text" style="font-weight: 750;">${escapeHtml(issue.problem)}</div>
+                <button type="button" class="btn-delete-issue" title="Delete Problem" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+              </div>
               ${author ? `<div class="cell-author-tag">👤 ${escapeHtml(author)}</div>` : ''}
             </div>
           `;
         } else {
-          tdProblem.style.cursor = 'pointer';
-          tdProblem.title = `Click to enter problem/issue for ${hourData.hourKey}`;
-          tdProblem.addEventListener('click', () => {
-            openEnterDataModal(hourData.hourKey);
-          });
+          // Check if this is the first slot in this hour that doesn't have a problem
+          const firstEmptyIdx = hourData.issues.findIndex(i => !i.problem || !i.problem.trim());
+          if (firstEmptyIdx === lineIdx) {
+            tdProblem.innerHTML = `
+              <div class="cell-read-only-content" style="align-items: center; justify-content: center;">
+                <button type="button" class="btn-table-inline btn-enter-problem" data-hour-key="${hourData.hourKey}">
+                  ✍️ + Enter Problem
+                </button>
+              </div>
+            `;
+          } else {
+            tdProblem.innerHTML = '';
+            tdProblem.style.cursor = 'pointer';
+            tdProblem.title = `Click to enter problem for ${hourData.hourKey}`;
+            tdProblem.addEventListener('click', () => {
+              openEnterDataModal(hourData.hourKey);
+            });
+          }
         }
         tr.appendChild(tdProblem);
 
-        // 8. Root Cause (Read-only, or button to enter cause if problem exists)
+        // 8. Root Cause (Requires Problem to exist first)
         const tdRoot = document.createElement('td');
         const hasRoot = Boolean(issue.rootCause && issue.rootCause.trim() !== '');
-        if (hasRoot) {
+        if (!hasProb) {
+          // Cannot enter Root Cause without a Problem
+          tdRoot.innerHTML = '';
+        } else if (hasRoot) {
           tdRoot.innerHTML = `
             <div class="cell-read-only-content">
               <div class="cell-issue-text">${escapeHtml(issue.rootCause)}</div>
             </div>
           `;
-        } else if (hasProb) {
+        } else {
+          // Problem exists but no Root Cause: show button to enter it
           tdRoot.innerHTML = `
             <div class="cell-read-only-content" style="align-items: center; justify-content: center;">
               <button type="button" class="btn-table-inline btn-inline-cause" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">
-                + Cause
+                + Enter Root Cause
               </button>
             </div>
           `;
-        } else {
-          tdRoot.style.cursor = 'pointer';
-          tdRoot.title = `Click to enter issue for ${hourData.hourKey}`;
-          tdRoot.addEventListener('click', () => {
-            openEnterDataModal(hourData.hourKey);
-          });
         }
         tr.appendChild(tdRoot);
 
-        // 9. Containment Action (Read-only, or alert button if missing)
+        // 9. Containment Action (Requires Problem to exist first; shows Missing Action if blank)
         const tdAction = document.createElement('td');
         const hasAct = Boolean(issue.containmentAction && issue.containmentAction.trim() !== '');
-        if (hasAct) {
+        if (!hasProb) {
+          // Cannot enter Containment Action without a Problem
+          tdAction.classList.remove('cell-missing-action');
+          tdAction.innerHTML = '';
+        } else if (hasAct) {
           const actionAuthor = issue.actionTakenBy ? formatMrName(issue.actionTakenBy) : (issue.enteredBy ? formatMrName(issue.enteredBy) : '');
           tdAction.classList.remove('cell-missing-action');
           tdAction.innerHTML = `
@@ -668,22 +686,16 @@ function renderTable() {
               ${actionAuthor ? `<div class="cell-author-tag">👤 ${escapeHtml(actionAuthor)}</div>` : ''}
             </div>
           `;
-        } else if (hasProb) {
+        } else {
+          // Problem exists but no Containment Action: show warning "Missing Action" button
           tdAction.classList.add('cell-missing-action');
           tdAction.innerHTML = `
             <div class="cell-read-only-content" style="align-items: center; justify-content: center;">
               <button type="button" class="btn-table-inline btn-inline-action" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">
-                ⚠️ + Enter Action
+                ⚠️ Missing Action (+ Add)
               </button>
             </div>
           `;
-        } else {
-          tdAction.classList.remove('cell-missing-action');
-          tdAction.style.cursor = 'pointer';
-          tdAction.title = `Click to enter issue for ${hourData.hourKey}`;
-          tdAction.addEventListener('click', () => {
-            openEnterDataModal(hourData.hourKey);
-          });
         }
         tr.appendChild(tdAction);
 
@@ -760,6 +772,56 @@ function renderTable() {
       const hourKey = btn.dataset.hourKey;
       const lineIdx = Number(btn.dataset.lineIdx);
       openInlineActionModal(hourKey, lineIdx);
+    });
+  });
+
+  // Attach "+ Enter Problem" button handlers
+  document.querySelectorAll('.btn-enter-problem').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEnterDataModal(btn.dataset.hourKey);
+    });
+  });
+
+  // Attach "🗑️ Delete Problem" button handlers
+  document.querySelectorAll('.btn-delete-issue').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const hourKey = btn.dataset.hourKey;
+      const lineIdx = Number(btn.dataset.lineIdx);
+
+      if (!confirm(`Are you sure you want to delete this Problem / Issue (${hourKey})?`)) {
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳';
+      try {
+        const res = await fetch('/api/issue', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: state.date,
+            shiftType: state.shiftType,
+            hourKey: hourKey,
+            lineIdx: lineIdx
+          })
+        });
+        const json = await res.json();
+        if (res.ok && json.success) {
+          await loadTrackingSheet();
+          await fetchMissingActionsFromDB();
+          await fetchTakenActionsFromDB();
+        } else {
+          alert('Error deleting issue: ' + (json.error || 'Server error'));
+          btn.disabled = false;
+          btn.textContent = '🗑️';
+        }
+      } catch (err) {
+        alert('Network error deleting issue: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = '🗑️';
+      }
     });
   });
 
