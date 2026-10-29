@@ -610,7 +610,11 @@ function renderTable() {
             </div>
           `;
         } else {
-          tdProblem.innerHTML = '';
+          tdProblem.style.cursor = 'pointer';
+          tdProblem.title = `Click to enter problem/issue for ${hourData.hourKey}`;
+          tdProblem.addEventListener('click', () => {
+            openEnterDataModal(hourData.hourKey);
+          });
         }
         tr.appendChild(tdProblem);
 
@@ -632,7 +636,11 @@ function renderTable() {
             </div>
           `;
         } else {
-          tdRoot.innerHTML = '';
+          tdRoot.style.cursor = 'pointer';
+          tdRoot.title = `Click to enter issue for ${hourData.hourKey}`;
+          tdRoot.addEventListener('click', () => {
+            openEnterDataModal(hourData.hourKey);
+          });
         }
         tr.appendChild(tdRoot);
 
@@ -659,7 +667,11 @@ function renderTable() {
           `;
         } else {
           tdAction.classList.remove('cell-missing-action');
-          tdAction.innerHTML = '';
+          tdAction.style.cursor = 'pointer';
+          tdAction.title = `Click to enter issue for ${hourData.hourKey}`;
+          tdAction.addEventListener('click', () => {
+            openEnterDataModal(hourData.hourKey);
+          });
         }
         tr.appendChild(tdAction);
 
@@ -884,6 +896,12 @@ function triggerAutoSave() {
 // Save to MongoDB API
 async function saveTrackingSheet(isManual = false) {
   setSaveStatus('saving', 'Saving to Cloud...');
+  const btnSave = document.getElementById('btnSaveNow');
+  if (isManual && btnSave) {
+    btnSave.disabled = true;
+    btnSave.innerHTML = '⏳ Saving...';
+  }
+
   try {
     const payload = {
       date: state.date,
@@ -902,13 +920,44 @@ async function saveTrackingSheet(isManual = false) {
     if (res.ok && json.success) {
       state.hasUnsavedChanges = false;
       setSaveStatus('saved', isManual ? 'Saved successfully!' : 'Saved');
+      if (isManual && btnSave) {
+        btnSave.innerHTML = '✅ Saved!';
+        btnSave.style.background = '#059669';
+        setTimeout(() => {
+          btnSave.innerHTML = '💾 Save Now';
+          btnSave.style.background = '';
+          btnSave.disabled = false;
+        }, 2000);
+      }
       fetchMissingActionsFromDB();
+      fetchTakenActionsFromDB();
     } else {
-      setSaveStatus('error', json.error || 'Failed to save');
+      const errMsg = (json && json.error) ? json.error : 'Failed to save';
+      setSaveStatus('error', errMsg);
+      if (isManual) {
+        alert('❌ Error saving sheet: ' + errMsg);
+        if (btnSave) {
+          btnSave.innerHTML = '⚠️ Error';
+          btnSave.disabled = false;
+          setTimeout(() => {
+            btnSave.innerHTML = '💾 Save Now';
+          }, 2000);
+        }
+      }
     }
   } catch (err) {
     console.error('Error saving:', err);
     setSaveStatus('error', 'Network error');
+    if (isManual) {
+      alert('❌ Network error saving sheet: ' + err.message);
+      if (btnSave) {
+        btnSave.innerHTML = '⚠️ Error';
+        btnSave.disabled = false;
+        setTimeout(() => {
+          btnSave.innerHTML = '💾 Save Now';
+        }, 2000);
+      }
+    }
   }
 }
 
@@ -1489,6 +1538,10 @@ function openEnterDataModal(preselectedHourKey = null) {
   if (nameInput) {
     let savedName = localStorage.getItem('savedOperatorName') || '';
     if (savedName.startsWith('Mr. ')) savedName = savedName.substring(4);
+    if (/^(operator|kamal|nimal)/i.test(savedName.trim())) {
+      savedName = '';
+      localStorage.removeItem('savedOperatorName');
+    }
     nameInput.value = savedName;
   }
 
@@ -1523,7 +1576,7 @@ async function handleEnterDataSubmit(e) {
 
   const rawName = (nameInput ? nameInput.value : '').trim();
   if (!rawName) {
-    alert('Please enter your Name (e.g. Mr. Kamal).');
+    alert('Please enter your Name.');
     if (nameInput) nameInput.focus();
     return;
   }
@@ -1606,7 +1659,15 @@ function openInlineActionModal(hourKey, lineIdx) {
   const hourBadge = document.getElementById('inlineActionHourBadge');
   if (hourBadge) hourBadge.textContent = '⏰ ' + hourKey + ' - Line #' + (Number(lineIdx) + 1);
   const authorBadge = document.getElementById('inlineActionAuthorBadge');
-  if (authorBadge) authorBadge.textContent = '👤 ' + (issue.enteredBy ? formatMrName(issue.enteredBy) : 'Mr. Operator');
+  if (authorBadge) {
+    if (issue.enteredBy && issue.enteredBy.trim()) {
+      authorBadge.style.display = 'inline-flex';
+      authorBadge.textContent = '👤 ' + formatMrName(issue.enteredBy);
+    } else {
+      authorBadge.style.display = 'none';
+      authorBadge.textContent = '';
+    }
+  }
 
   const problemText = document.getElementById('inlineActionProblemText');
   if (problemText) problemText.textContent = issue.problem || '—';
@@ -1615,6 +1676,10 @@ function openInlineActionModal(hourKey, lineIdx) {
   if (nameInput) {
     let savedName = localStorage.getItem('savedOperatorName') || '';
     if (savedName.startsWith('Mr. ')) savedName = savedName.substring(4);
+    if (/^(operator|kamal|nimal)/i.test(savedName.trim())) {
+      savedName = '';
+      localStorage.removeItem('savedOperatorName');
+    }
     nameInput.value = savedName;
   }
 
@@ -1641,7 +1706,7 @@ async function handleInlineActionSubmit(e) {
 
   const rawName = (nameInput ? nameInput.value : '').trim();
   if (!rawName) {
-    alert('Please enter your Name (e.g. Mr. Kamal).');
+    alert('Please enter your Name.');
     if (nameInput) nameInput.focus();
     return;
   }

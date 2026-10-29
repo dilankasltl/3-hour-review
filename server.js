@@ -14,16 +14,25 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // MongoDB Connection Cache (works for both standalone server and Vercel serverless)
-let cachedDb = null;
+let cachedPromise = null;
 async function connectToDatabase() {
-  if (cachedDb && mongoose.connection.readyState === 1) {
-    return cachedDb;
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
   }
-  cachedDb = await mongoose.connect(MONGODB_URI, {
-    bufferCommands: false
-  });
-  console.log('✅ Connected to MongoDB Atlas successfully.');
-  return cachedDb;
+  if (!cachedPromise) {
+    cachedPromise = mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000
+    }).then(m => {
+      console.log('✅ Connected to MongoDB Atlas successfully.');
+      return m;
+    }).catch(err => {
+      cachedPromise = null;
+      console.error('❌ MongoDB Connection failed:', err.message);
+      throw err;
+    });
+  }
+  await cachedPromise;
+  return mongoose.connection;
 }
 
 // Ensure DB connected on each API request

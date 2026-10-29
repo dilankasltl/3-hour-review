@@ -223,7 +223,7 @@ router.post('/tracking', async (req, res) => {
           lastSavedAt: new Date()
         }
       },
-      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true }
     );
 
     res.json({
@@ -307,6 +307,7 @@ router.post('/issue/entry', async (req, res) => {
     }
 
     sheet.lastSavedAt = new Date();
+    sheet.markModified('hours');
     await sheet.save();
 
     res.json({
@@ -352,6 +353,7 @@ router.patch('/issue/update-action', async (req, res) => {
     }
 
     sheet.lastSavedAt = new Date();
+    sheet.markModified('hours');
     await sheet.save();
 
     res.json({ success: true, message: 'Action saved successfully', issue });
@@ -460,6 +462,7 @@ router.patch('/containment-action', async (req, res) => {
       hour.issues[lineIdx].actionTakenBy = formatMrName(name);
     }
     sheet.lastSavedAt = new Date();
+    sheet.markModified('hours');
     await sheet.save();
     res.json({ success: true, message: 'Containment action saved successfully' });
   } catch (err) {
