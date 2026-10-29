@@ -47,6 +47,18 @@ const BLOCK_LABELS = {
   ]
 };
 
+// Helper to format operator/person name with Mr. prefix
+function formatMrName(name) {
+  let trimmed = (name || '').trim();
+  if (!trimmed) return '';
+  if (!/^mr\.?\s+/i.test(trimmed)) {
+    trimmed = 'Mr. ' + trimmed;
+  } else {
+    trimmed = trimmed.replace(/^mr\.?\s*/i, 'Mr. ');
+  }
+  return trimmed;
+}
+
 // Application State
 const state = {
   date: getTodayDateString(),
@@ -395,7 +407,7 @@ async function loadTrackingSheet() {
     renderTable();
     updateKPISummaries();
     updateMissingActionsBadge();
-    setSaveStatus('error', 'Offline / Load error');
+    setSaveStatus('error', 'Load error: ' + (err.message || 'Offline'));
   }
 }
 
@@ -1621,13 +1633,55 @@ async function handleEnterDataSubmit(e) {
       const modal = document.getElementById('enterDataModal');
       if (modal) modal.classList.remove('open');
 
-      // If entered for currently active sheet, reload it
-      if (payload.date === state.date && payload.shiftType === state.shiftType) {
-        await loadTrackingSheet();
+      // If user entered issue for a different date or shift than current view, switch to it!
+      if (payload.date !== state.date || payload.shiftType !== state.shiftType) {
+        state.date = payload.date;
+        state.shiftType = payload.shiftType;
+        const sheetDateEl = document.getElementById('sheetDate');
+        if (sheetDateEl) sheetDateEl.value = state.date;
+        const btnDay = document.getElementById('btnDayShift');
+        const btnNight = document.getElementById('btnNightShift');
+        if (state.shiftType === 'DAY') {
+          if (btnDay) btnDay.classList.add('active', 'day-shift');
+          if (btnNight) btnNight.classList.remove('active', 'night-shift');
+          const badge = document.getElementById('currentShiftBadge');
+          if (badge) {
+            badge.textContent = 'DAY SHIFT';
+            badge.style.background = '#f59e0b';
+            badge.style.color = '#000';
+          }
+        } else {
+          if (btnNight) btnNight.classList.add('active', 'night-shift');
+          if (btnDay) btnDay.classList.remove('active', 'day-shift');
+          const badge = document.getElementById('currentShiftBadge');
+          if (badge) {
+            badge.textContent = 'NIGHT SHIFT';
+            badge.style.background = '#6366f1';
+            badge.style.color = '#fff';
+          }
+        }
       }
 
+      await loadTrackingSheet();
       await fetchMissingActionsFromDB();
       await fetchTakenActionsFromDB();
+
+      // Highlight and smoothly scroll to the target hour in the table
+      setTimeout(() => {
+        const hourBadges = document.querySelectorAll('.time-cell-badge');
+        hourBadges.forEach(badge => {
+          if (badge.textContent.trim() === payload.hourKey) {
+            const tr = badge.closest('tr');
+            if (tr) {
+              tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              tr.style.transition = 'background-color 0.4s ease';
+              const origBg = tr.style.backgroundColor;
+              tr.style.backgroundColor = '#fef08a';
+              setTimeout(() => { tr.style.backgroundColor = origBg; }, 2500);
+            }
+          }
+        });
+      }, 250);
     } else {
       alert('Error saving issue: ' + (json.error || 'Server error'));
     }

@@ -185,7 +185,12 @@ router.post('/tracking', async (req, res) => {
       return res.status(400).json({ error: 'Invalid shiftType' });
     }
 
-    const processedHours = (hours || []).map(h => {
+    const defaultHours = SHIFT_HOURS[normalizedShift] || SHIFT_HOURS.DAY;
+    const sentHoursMap = new Map();
+    (hours || []).forEach(h => sentHoursMap.set(h.hourKey, h));
+
+    const processedHours = defaultHours.map(def => {
+      const h = sentHoursMap.get(def.hourKey) || { hourKey: def.hourKey, blockIndex: def.blockIndex, issues: [] };
       const plan = parseNullableNumber(h.plan);
       const achievement = parseNullableNumber(h.achievement);
       let loss = parseNullableNumber(h.loss);
@@ -194,23 +199,30 @@ router.post('/tracking', async (req, res) => {
         loss = plan - achievement;
       }
 
+      const issues = (h.issues || []).map(i => ({
+        defectScrap: String(i.defectScrap || ''),
+        problem: String(i.problem || ''),
+        rootCause: String(i.rootCause || ''),
+        containmentAction: String(i.containmentAction || ''),
+        pcNumber: String(i.pcNumber || ''),
+        enteredBy: i.enteredBy ? formatMrName(i.enteredBy) : '',
+        actionTakenBy: i.actionTakenBy ? formatMrName(i.actionTakenBy) : '',
+        createdAt: i.createdAt || new Date()
+      }));
+
+      while (issues.length < 5) {
+        issues.push({ defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '', createdAt: new Date() });
+      }
+
       return {
-        hourKey: h.hourKey,
-        blockIndex: Number(h.blockIndex) || 0,
+        hourKey: def.hourKey,
+        blockIndex: def.blockIndex,
         plan: plan,
         achievement: achievement,
         loss: loss,
         defectScrap: String(h.defectScrap || ''),
         flashKg: parseNullableNumber(h.flashKg),
-        issues: (h.issues || []).map(i => ({
-          defectScrap: String(i.defectScrap || ''),
-          problem: String(i.problem || ''),
-          rootCause: String(i.rootCause || ''),
-          containmentAction: String(i.containmentAction || ''),
-          pcNumber: String(i.pcNumber || ''),
-          enteredBy: i.enteredBy ? formatMrName(i.enteredBy) : '',
-          actionTakenBy: i.actionTakenBy ? formatMrName(i.actionTakenBy) : ''
-        }))
+        issues: issues
       };
     });
 
@@ -260,11 +272,35 @@ router.post('/issue/entry', async (req, res) => {
       });
     }
 
+    // Ensure all 12 hours exist in sheet.hours
+    const defaultHours = SHIFT_HOURS[normalizedShift] || SHIFT_HOURS.DAY;
+    const existingKeys = new Set((sheet.hours || []).map(h => h.hourKey));
+    defaultHours.forEach(def => {
+      if (!existingKeys.has(def.hourKey)) {
+        sheet.hours.push({
+          hourKey: def.hourKey,
+          blockIndex: def.blockIndex,
+          plan: null,
+          achievement: null,
+          loss: null,
+          defectScrap: '',
+          flashKg: null,
+          issues: [
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' },
+            { defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' }
+          ]
+        });
+      }
+    });
+
     let hour = sheet.hours.find(h => h.hourKey === hourKey);
     if (!hour) {
-      const template = (SHIFT_HOURS[normalizedShift] || SHIFT_HOURS.DAY).find(t => t.hourKey === hourKey);
+      const template = defaultHours.find(t => t.hourKey === hourKey);
       const blockIndex = template ? template.blockIndex : 0;
-      hour = {
+      sheet.hours.push({
         hourKey,
         blockIndex,
         plan: null,
@@ -273,18 +309,17 @@ router.post('/issue/entry', async (req, res) => {
         defectScrap: '',
         flashKg: null,
         issues: []
-      };
-      sheet.hours.push(hour);
+      });
+      hour = sheet.hours[sheet.hours.length - 1];
     }
 
     if (!hour.issues) hour.issues = [];
+    while (hour.issues.length < 5) {
+      hour.issues.push({ defectScrap: '', problem: '', rootCause: '', containmentAction: '', pcNumber: '', enteredBy: '', actionTakenBy: '' });
+    }
 
-    // Find the first issue row that has no problem, rootCause, or action
-    let targetIssue = hour.issues.find(i => 
-      (!i.problem || i.problem.trim() === '') && 
-      (!i.rootCause || i.rootCause.trim() === '') && 
-      (!i.containmentAction || i.containmentAction.trim() === '')
-    );
+    // Find the first issue row that has no problem entered
+    let targetIssue = hour.issues.find(i => (!i.problem || i.problem.trim() === ''));
 
     const hasAction = Boolean(containmentAction && containmentAction.trim() !== '');
 
@@ -300,7 +335,14 @@ router.post('/issue/entry', async (req, res) => {
     };
 
     if (targetIssue) {
-      Object.assign(targetIssue, newIssueData);
+      targetIssue.defectScrap = newIssueData.defectScrap;
+      targetIssue.problem = newIssueData.problem;
+      targetIssue.rootCause = newIssueData.rootCause;
+      targetIssue.containmentAction = newIssueData.containmentAction;
+      targetIssue.pcNumber = newIssueData.pcNumber;
+      targetIssue.enteredBy = newIssueData.enteredBy;
+      targetIssue.actionTakenBy = newIssueData.actionTakenBy;
+      targetIssue.createdAt = newIssueData.createdAt;
     } else {
       // If all rows have problems, push a new line so concurrent submissions get their own separate line
       hour.issues.push(newIssueData);
