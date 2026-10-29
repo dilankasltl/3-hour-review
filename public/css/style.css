@@ -629,26 +629,13 @@ html, body {
   box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);
 }
 
-/* Delete problem icon button */
-.btn-delete-issue {
-  background: transparent;
-  border: none;
-  color: #ef4444;
-  cursor: pointer;
-  padding: 2px 5px;
-  border-radius: 4px;
-  font-size: 0.78rem;
-  line-height: 1;
-  transition: all 0.15s ease;
-  opacity: 0.55;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.btn-delete-issue:hover {
-  opacity: 1;
-  background: #fee2e2;
-  transform: scale(1.15);
+/* Delete buttons hidden per user request */
+.btn-icon-del,
+.btn-delete-issue,
+.btn-del-prob,
+.btn-del-cause,
+.btn-del-action {
+  display: none !important;
 }
 
 .cell-issue-header-row {

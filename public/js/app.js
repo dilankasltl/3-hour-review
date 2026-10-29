@@ -621,7 +621,7 @@ function renderTable() {
                 <div class="cell-issue-text" style="font-weight: 750;">${escapeHtml(issue.problem)}</div>
                 <span class="cell-action-btns">
                   <button type="button" class="btn-icon-action btn-icon-edit btn-edit-prob" title="Edit Problem" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">✏️</button>
-                  <button type="button" class="btn-icon-action btn-icon-del btn-del-prob" title="Delete Problem (and its cause & action)" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+                  <button type="button" class="btn-icon-action btn-icon-del btn-del-prob" style="display: none;" title="Delete Problem" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
                 </span>
               </div>
               ${author ? `<div class="cell-author-tag">👤 ${escapeHtml(author)}</div>` : ''}
@@ -646,7 +646,7 @@ function renderTable() {
                 <div class="cell-issue-text">${escapeHtml(issue.rootCause)}</div>
                 <span class="cell-action-btns">
                   <button type="button" class="btn-icon-action btn-icon-edit btn-edit-cause" title="Edit Root Cause" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">✏️</button>
-                  <button type="button" class="btn-icon-action btn-icon-del btn-del-cause" title="Delete Root Cause" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+                  <button type="button" class="btn-icon-action btn-icon-del btn-del-cause" style="display: none;" title="Delete Root Cause" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
                 </span>
               </div>
             </div>
@@ -679,7 +679,7 @@ function renderTable() {
                 <div class="cell-issue-text cell-action-success">✅ ${escapeHtml(issue.containmentAction)}</div>
                 <span class="cell-action-btns">
                   <button type="button" class="btn-icon-action btn-icon-edit btn-edit-action" title="Edit Containment Action" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">✏️</button>
-                  <button type="button" class="btn-icon-action btn-icon-del btn-del-action" title="Delete Containment Action" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+                  <button type="button" class="btn-icon-action btn-icon-del btn-del-action" style="display: none;" title="Delete Containment Action" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
                 </span>
               </div>
               ${actionAuthor ? `<div class="cell-author-tag">👤 ${escapeHtml(actionAuthor)}</div>` : ''}
