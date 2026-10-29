@@ -656,7 +656,40 @@ html, body {
   align-items: flex-start;
   justify-content: space-between;
   width: 100%;
-  gap: 6px;
+  gap: 4px;
+}
+
+.cell-action-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.btn-icon-action {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 0.76rem;
+  line-height: 1;
+  transition: all 0.15s ease;
+  opacity: 0.5;
+}
+
+.btn-icon-action:hover {
+  opacity: 1;
+  transform: scale(1.18);
+}
+
+.btn-icon-edit:hover {
+  background: #e0f2fe;
+}
+
+.btn-icon-del:hover {
+  background: #fee2e2;
 }
 
 /* Defect Textarea */

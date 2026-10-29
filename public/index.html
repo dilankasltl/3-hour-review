@@ -184,11 +184,12 @@
   <div class="modal-overlay" id="enterDataModal">
     <div class="modal-card modal-lg">
       <div class="modal-header" style="background: linear-gradient(135deg, #1e3a8a, #2563eb);">
-        <div class="modal-title">✍️ Enter Production Problem / Action</div>
+        <div class="modal-title" id="enterDataModalTitle">✍️ Enter Production Problem / Action</div>
         <button type="button" class="modal-close" id="btnCloseEnterData">&times;</button>
       </div>
       <div class="modal-body">
         <form id="enterDataForm" class="modal-form-grid">
+          <input type="hidden" id="formEditLineIdx" value="">
           
           <!-- Name & Date -->
           <div class="form-row">
@@ -271,7 +272,7 @@
   <div class="modal-overlay" id="inlineActionModal">
     <div class="modal-card">
       <div class="modal-header" style="background: linear-gradient(135deg, #0f766e, #0d9488);">
-        <div class="modal-title">✍️ Enter Root Cause & Containment Action</div>
+        <div class="modal-title" id="inlineActionModalTitle">✍️ Enter Root Cause & Containment Action</div>
         <button type="button" class="modal-close" id="btnCloseInlineAction">&times;</button>
       </div>
       <div class="modal-body">
@@ -307,8 +308,8 @@
 
           <!-- Containment Action -->
           <div class="form-group">
-            <label class="form-label" for="inlineActionContainment">Containment Action: <span class="required-star">*</span></label>
-            <textarea id="inlineActionContainment" class="form-textarea" rows="2" placeholder="Enter containment action taken..." required></textarea>
+            <label class="form-label" for="inlineActionContainment">Containment Action:</label>
+            <textarea id="inlineActionContainment" class="form-textarea" rows="2" placeholder="Enter containment action taken..."></textarea>
           </div>
 
           <div class="form-actions-footer">

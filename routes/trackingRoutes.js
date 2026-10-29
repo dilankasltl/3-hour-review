@@ -363,10 +363,10 @@ router.post('/issue/entry', async (req, res) => {
   }
 });
 
-// DELETE /api/issue - Delete a problem/issue row
+// DELETE /api/issue - Delete a problem, rootCause, or containmentAction
 router.delete('/issue', async (req, res) => {
   try {
-    const { date, shiftType, hourKey, lineIdx } = req.body;
+    const { date, shiftType, hourKey, lineIdx, field } = req.body;
     if (!date || !shiftType || !hourKey || lineIdx === undefined) {
       return res.status(400).json({ error: 'Date, shiftType, hourKey, and lineIdx are required' });
     }
@@ -381,28 +381,83 @@ router.delete('/issue', async (req, res) => {
       return res.status(404).json({ error: 'Hour or line not found' });
     }
 
-    // If extra line beyond 5, remove it completely
-    if (hour.issues.length > 5) {
-      hour.issues.splice(lineIdx, 1);
+    const issue = hour.issues[lineIdx];
+
+    if (field === 'rootCause') {
+      // Delete ONLY Root Cause
+      issue.rootCause = '';
+    } else if (field === 'containmentAction') {
+      // Delete ONLY Containment Action
+      issue.containmentAction = '';
+      issue.actionTakenBy = '';
     } else {
-      // Clear this slot to empty so it remains one of the 5 standard ruled lines
-      hour.issues[lineIdx].problem = '';
-      hour.issues[lineIdx].rootCause = '';
-      hour.issues[lineIdx].containmentAction = '';
-      hour.issues[lineIdx].defectScrap = '';
-      hour.issues[lineIdx].pcNumber = '';
-      hour.issues[lineIdx].enteredBy = '';
-      hour.issues[lineIdx].actionTakenBy = '';
-      hour.issues[lineIdx].createdAt = new Date();
+      // Delete Problem (also deletes Root Cause and Containment Action for this line)
+      if (hour.issues.length > 5 && lineIdx >= 5) {
+        hour.issues.splice(lineIdx, 1);
+      } else {
+        issue.problem = '';
+        issue.rootCause = '';
+        issue.containmentAction = '';
+        issue.defectScrap = '';
+        issue.pcNumber = '';
+        issue.enteredBy = '';
+        issue.actionTakenBy = '';
+        issue.createdAt = new Date();
+      }
     }
 
     sheet.lastSavedAt = new Date();
     sheet.markModified('hours');
     await sheet.save();
 
-    res.json({ success: true, message: 'Issue deleted successfully', sheet });
+    res.json({ success: true, message: 'Deleted successfully', sheet });
   } catch (err) {
     console.error('Error deleting issue:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/issue/update-problem - Edit an existing problem row
+router.patch('/issue/update-problem', async (req, res) => {
+  try {
+    const { date, shiftType, hourKey, lineIdx, problem, rootCause, containmentAction, defectScrap, pcNumber, name } = req.body;
+    if (!date || !shiftType || !hourKey || lineIdx === undefined || !name || !problem) {
+      return res.status(400).json({ error: 'Date, shiftType, hourKey, lineIdx, name, and problem are required' });
+    }
+
+    const formattedName = formatMrName(name);
+    const sheet = await TrackingSheet.findOne({ date, shiftType: shiftType.toUpperCase() });
+    if (!sheet) {
+      return res.status(404).json({ error: 'Sheet not found' });
+    }
+
+    const hour = (sheet.hours || []).find(h => h.hourKey === hourKey);
+    if (!hour || !hour.issues || !hour.issues[lineIdx]) {
+      return res.status(404).json({ error: 'Hour or line not found' });
+    }
+
+    const issue = hour.issues[lineIdx];
+    issue.problem = problem.trim();
+    if (rootCause !== undefined) issue.rootCause = (rootCause || '').trim();
+    if (containmentAction !== undefined) {
+      issue.containmentAction = (containmentAction || '').trim();
+      if (issue.containmentAction) {
+        issue.actionTakenBy = formattedName;
+      } else {
+        issue.actionTakenBy = '';
+      }
+    }
+    if (defectScrap !== undefined) issue.defectScrap = (defectScrap || '').trim();
+    if (pcNumber !== undefined) issue.pcNumber = (pcNumber || '').trim();
+    issue.enteredBy = formattedName;
+
+    sheet.lastSavedAt = new Date();
+    sheet.markModified('hours');
+    await sheet.save();
+
+    res.json({ success: true, message: 'Problem updated successfully', issue });
+  } catch (err) {
+    console.error('Error updating problem:', err);
     res.status(500).json({ error: err.message });
   }
 });

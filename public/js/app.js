@@ -619,30 +619,17 @@ function renderTable() {
             <div class="cell-read-only-content">
               <div class="cell-issue-header-row">
                 <div class="cell-issue-text" style="font-weight: 750;">${escapeHtml(issue.problem)}</div>
-                <button type="button" class="btn-delete-issue" title="Delete Problem" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+                <span class="cell-action-btns">
+                  <button type="button" class="btn-icon-action btn-icon-edit btn-edit-prob" title="Edit Problem" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">✏️</button>
+                  <button type="button" class="btn-icon-action btn-icon-del btn-del-prob" title="Delete Problem (and its cause & action)" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+                </span>
               </div>
               ${author ? `<div class="cell-author-tag">👤 ${escapeHtml(author)}</div>` : ''}
             </div>
           `;
         } else {
-          // Check if this is the first slot in this hour that doesn't have a problem
-          const firstEmptyIdx = hourData.issues.findIndex(i => !i.problem || !i.problem.trim());
-          if (firstEmptyIdx === lineIdx) {
-            tdProblem.innerHTML = `
-              <div class="cell-read-only-content" style="align-items: center; justify-content: center;">
-                <button type="button" class="btn-table-inline btn-enter-problem" data-hour-key="${hourData.hourKey}">
-                  ✍️ + Enter Problem
-                </button>
-              </div>
-            `;
-          } else {
-            tdProblem.innerHTML = '';
-            tdProblem.style.cursor = 'pointer';
-            tdProblem.title = `Click to enter problem for ${hourData.hourKey}`;
-            tdProblem.addEventListener('click', () => {
-              openEnterDataModal(hourData.hourKey);
-            });
-          }
+          // Clean empty cell! Do NOT open modal on clicking empty rows
+          tdProblem.innerHTML = '';
         }
         tr.appendChild(tdProblem);
 
@@ -655,7 +642,13 @@ function renderTable() {
         } else if (hasRoot) {
           tdRoot.innerHTML = `
             <div class="cell-read-only-content">
-              <div class="cell-issue-text">${escapeHtml(issue.rootCause)}</div>
+              <div class="cell-issue-header-row">
+                <div class="cell-issue-text">${escapeHtml(issue.rootCause)}</div>
+                <span class="cell-action-btns">
+                  <button type="button" class="btn-icon-action btn-icon-edit btn-edit-cause" title="Edit Root Cause" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">✏️</button>
+                  <button type="button" class="btn-icon-action btn-icon-del btn-del-cause" title="Delete Root Cause" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+                </span>
+              </div>
             </div>
           `;
         } else {
@@ -682,7 +675,13 @@ function renderTable() {
           tdAction.classList.remove('cell-missing-action');
           tdAction.innerHTML = `
             <div class="cell-read-only-content">
-              <div class="cell-issue-text cell-action-success">✅ ${escapeHtml(issue.containmentAction)}</div>
+              <div class="cell-issue-header-row">
+                <div class="cell-issue-text cell-action-success">✅ ${escapeHtml(issue.containmentAction)}</div>
+                <span class="cell-action-btns">
+                  <button type="button" class="btn-icon-action btn-icon-edit btn-edit-action" title="Edit Containment Action" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">✏️</button>
+                  <button type="button" class="btn-icon-action btn-icon-del btn-del-action" title="Delete Containment Action" data-hour-key="${hourData.hourKey}" data-line-idx="${lineIdx}">🗑️</button>
+                </span>
+              </div>
               ${actionAuthor ? `<div class="cell-author-tag">👤 ${escapeHtml(actionAuthor)}</div>` : ''}
             </div>
           `;
@@ -766,62 +765,122 @@ function renderTable() {
     });
   });
 
-  // Attach inline action button handlers (+ Cause and + Enter Action)
-  document.querySelectorAll('.btn-inline-action, .btn-inline-cause').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const hourKey = btn.dataset.hourKey;
-      const lineIdx = Number(btn.dataset.lineIdx);
-      openInlineActionModal(hourKey, lineIdx);
-    });
-  });
-
-  // Attach "+ Enter Problem" button handlers
-  document.querySelectorAll('.btn-enter-problem').forEach(btn => {
+  // Attach "+ Enter Root Cause" button handlers
+  document.querySelectorAll('.btn-inline-cause').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      openEnterDataModal(btn.dataset.hourKey);
+      openInlineActionModal(btn.dataset.hourKey, Number(btn.dataset.lineIdx), 'rootCause');
     });
   });
 
-  // Attach "🗑️ Delete Problem" button handlers
-  document.querySelectorAll('.btn-delete-issue').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+  // Attach "⚠️ Missing Action (+ Add)" button handlers
+  document.querySelectorAll('.btn-inline-action').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const hourKey = btn.dataset.hourKey;
-      const lineIdx = Number(btn.dataset.lineIdx);
+      openInlineActionModal(btn.dataset.hourKey, Number(btn.dataset.lineIdx), 'containmentAction');
+    });
+  });
 
-      if (!confirm(`Are you sure you want to delete this Problem / Issue (${hourKey})?`)) {
-        return;
-      }
+  // Attach Edit Problem handlers
+  document.querySelectorAll('.btn-edit-prob').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEnterDataModal(btn.dataset.hourKey, Number(btn.dataset.lineIdx));
+    });
+  });
 
-      btn.disabled = true;
-      btn.textContent = '⏳';
-      try {
-        const res = await fetch('/api/issue', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            date: state.date,
-            shiftType: state.shiftType,
-            hourKey: hourKey,
-            lineIdx: lineIdx
-          })
-        });
-        const json = await res.json();
-        if (res.ok && json.success) {
-          await loadTrackingSheet();
-          await fetchMissingActionsFromDB();
-          await fetchTakenActionsFromDB();
-        } else {
-          alert('Error deleting issue: ' + (json.error || 'Server error'));
-          btn.disabled = false;
-          btn.textContent = '🗑️';
-        }
-      } catch (err) {
-        alert('Network error deleting issue: ' + err.message);
+  // Attach Edit Root Cause handlers
+  document.querySelectorAll('.btn-edit-cause').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openInlineActionModal(btn.dataset.hourKey, Number(btn.dataset.lineIdx), 'rootCause');
+    });
+  });
+
+  // Attach Edit Containment Action handlers
+  document.querySelectorAll('.btn-edit-action').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openInlineActionModal(btn.dataset.hourKey, Number(btn.dataset.lineIdx), 'containmentAction');
+    });
+  });
+
+  // Helper function to delete an issue or individual field
+  async function performIssueDelete(hourKey, lineIdx, field, confirmMsg, btn) {
+    if (!confirm(confirmMsg)) return;
+
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = '⏳';
+
+    try {
+      const res = await fetch('/api/issue', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: state.date,
+          shiftType: state.shiftType,
+          hourKey: hourKey,
+          lineIdx: lineIdx,
+          field: field
+        })
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        await loadTrackingSheet();
+        await fetchMissingActionsFromDB();
+        await fetchTakenActionsFromDB();
+      } else {
+        alert('Error deleting: ' + (json.error || 'Server error'));
         btn.disabled = false;
-        btn.textContent = '🗑️';
+        btn.textContent = origText;
       }
+    } catch (err) {
+      alert('Network error deleting: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = origText;
+    }
+  }
+
+  // Attach Delete Problem handlers (wipes problem, cause, and action)
+  document.querySelectorAll('.btn-del-prob').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      performIssueDelete(
+        btn.dataset.hourKey,
+        Number(btn.dataset.lineIdx),
+        'all',
+        `Are you sure you want to delete this Problem? (Its Root Cause & Containment Action will also be deleted)`,
+        btn
+      );
+    });
+  });
+
+  // Attach Delete Root Cause handlers (only deletes root cause)
+  document.querySelectorAll('.btn-del-cause').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      performIssueDelete(
+        btn.dataset.hourKey,
+        Number(btn.dataset.lineIdx),
+        'rootCause',
+        `Are you sure you want to delete this Root Cause?`,
+        btn
+      );
+    });
+  });
+
+  // Attach Delete Containment Action handlers (only deletes containment action)
+  document.querySelectorAll('.btn-del-action').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      performIssueDelete(
+        btn.dataset.hourKey,
+        Number(btn.dataset.lineIdx),
+        'containmentAction',
+        `Are you sure you want to delete this Containment Action?`,
+        btn
+      );
     });
   });
 
@@ -1582,8 +1641,8 @@ function populateEnterDataHours(shiftType) {
   });
 }
 
-// Open the Enter Data Modal
-function openEnterDataModal(preselectedHourKey = null) {
+// Open the Enter Data Modal (supports Create and Edit modes)
+function openEnterDataModal(preselectedHourKey = null, lineIdxToEdit = null) {
   const modal = document.getElementById('enterDataModal');
   if (!modal) return;
 
@@ -1607,28 +1666,56 @@ function openEnterDataModal(preselectedHourKey = null) {
     hourSelect.value = preselectedHourKey;
   }
 
-  // Pre-fill operator name from localStorage if available
-  const nameInput = document.getElementById('formPersonName');
-  if (nameInput) {
-    let savedName = localStorage.getItem('savedOperatorName') || '';
-    if (savedName.startsWith('Mr. ')) savedName = savedName.substring(4);
-    if (/^(operator|kamal|nimal)/i.test(savedName.trim())) {
-      savedName = '';
-      localStorage.removeItem('savedOperatorName');
-    }
-    nameInput.value = savedName;
-  }
+  const editLineInput = document.getElementById('formEditLineIdx');
+  const modalTitle = document.getElementById('enterDataModalTitle');
+  const btnSubmit = document.getElementById('btnSubmitEnterData');
 
+  const nameInput = document.getElementById('formPersonName');
   const formProblem = document.getElementById('formProblem');
-  if (formProblem) formProblem.value = '';
   const formRootCause = document.getElementById('formRootCause');
-  if (formRootCause) formRootCause.value = '';
   const formContainmentAction = document.getElementById('formContainmentAction');
-  if (formContainmentAction) formContainmentAction.value = '';
   const formDefectScrap = document.getElementById('formDefectScrap');
-  if (formDefectScrap) formDefectScrap.value = '';
   const formPcNumber = document.getElementById('formPcNumber');
-  if (formPcNumber) formPcNumber.value = '';
+
+  const isEdit = (lineIdxToEdit !== null && lineIdxToEdit !== undefined);
+
+  if (isEdit) {
+    if (editLineInput) editLineInput.value = String(lineIdxToEdit);
+    if (modalTitle) modalTitle.textContent = '✏️ Edit Production Problem / Issue';
+    if (btnSubmit) btnSubmit.textContent = '💾 Update Entry';
+
+    const hourData = (state.hours || []).find(h => h.hourKey === preselectedHourKey);
+    const issue = (hourData && hourData.issues && hourData.issues[lineIdxToEdit]) || {};
+
+    if (nameInput) {
+      let author = (issue.enteredBy || '').replace(/^Mr\.\s*/i, '');
+      nameInput.value = author;
+    }
+    if (formProblem) formProblem.value = issue.problem || '';
+    if (formRootCause) formRootCause.value = issue.rootCause || '';
+    if (formContainmentAction) formContainmentAction.value = issue.containmentAction || '';
+    if (formDefectScrap) formDefectScrap.value = issue.defectScrap || '';
+    if (formPcNumber) formPcNumber.value = issue.pcNumber || '';
+  } else {
+    if (editLineInput) editLineInput.value = '';
+    if (modalTitle) modalTitle.textContent = '✍️ Enter Production Problem / Action';
+    if (btnSubmit) btnSubmit.textContent = '💾 Submit Entry';
+
+    if (nameInput) {
+      let savedName = localStorage.getItem('savedOperatorName') || '';
+      if (savedName.startsWith('Mr. ')) savedName = savedName.substring(4);
+      if (/^(operator|kamal|nimal)/i.test(savedName.trim())) {
+        savedName = '';
+        localStorage.removeItem('savedOperatorName');
+      }
+      nameInput.value = savedName;
+    }
+    if (formProblem) formProblem.value = '';
+    if (formRootCause) formRootCause.value = '';
+    if (formContainmentAction) formContainmentAction.value = '';
+    if (formDefectScrap) formDefectScrap.value = '';
+    if (formPcNumber) formPcNumber.value = '';
+  }
 
   modal.classList.add('open');
 }
@@ -1644,6 +1731,7 @@ async function handleEnterDataSubmit(e) {
   const formContainmentAction = document.getElementById('formContainmentAction');
   const formDefectScrap = document.getElementById('formDefectScrap');
   const formPcNumber = document.getElementById('formPcNumber');
+  const editLineInput = document.getElementById('formEditLineIdx');
 
   const shiftRadio = document.querySelector('input[name="formShiftType"]:checked');
   const shiftType = shiftRadio ? shiftRadio.value : 'DAY';
@@ -1665,6 +1753,9 @@ async function handleEnterDataSubmit(e) {
   const formattedName = formatMrName(rawName);
   localStorage.setItem('savedOperatorName', formattedName);
 
+  const isEdit = Boolean(editLineInput && editLineInput.value !== '');
+  const lineIdx = isEdit ? Number(editLineInput.value) : null;
+
   const payload = {
     date: dateInput ? dateInput.value : state.date,
     shiftType: shiftType,
@@ -1677,15 +1768,22 @@ async function handleEnterDataSubmit(e) {
     name: formattedName
   };
 
+  if (isEdit) {
+    payload.lineIdx = lineIdx;
+  }
+
   const btnSubmit = document.getElementById('btnSubmitEnterData');
   if (btnSubmit) {
     btnSubmit.disabled = true;
-    btnSubmit.textContent = 'Saving...';
+    btnSubmit.textContent = isEdit ? 'Updating...' : 'Saving...';
   }
 
+  const endpoint = isEdit ? '/api/issue/update-problem' : '/api/issue/entry';
+  const method = isEdit ? 'PATCH' : 'POST';
+
   try {
-    const res = await fetch('/api/issue/entry', {
-      method: 'POST',
+    const res = await fetch(endpoint, {
+      method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
@@ -1752,13 +1850,13 @@ async function handleEnterDataSubmit(e) {
   } finally {
     if (btnSubmit) {
       btnSubmit.disabled = false;
-      btnSubmit.textContent = '💾 Submit Entry';
+      btnSubmit.textContent = isEdit ? '💾 Update Entry' : '💾 Submit Entry';
     }
   }
 }
 
-// Open Inline Action Modal (when user clicks "+ Cause" or "⚠️ + Enter Action" on the table)
-function openInlineActionModal(hourKey, lineIdx) {
+// Open Inline Action Modal (when user clicks "+ Enter Root Cause", "⚠️ Missing Action", or ✏️)
+function openInlineActionModal(hourKey, lineIdx, targetFocus = null) {
   const modal = document.getElementById('inlineActionModal');
   if (!modal) return;
 
@@ -1788,9 +1886,18 @@ function openInlineActionModal(hourKey, lineIdx) {
   const problemText = document.getElementById('inlineActionProblemText');
   if (problemText) problemText.textContent = issue.problem || '—';
 
+  const modalTitle = document.getElementById('inlineActionModalTitle');
+  if (targetFocus === 'rootCause') {
+    if (modalTitle) modalTitle.textContent = '✍️ Enter / Edit Root Cause';
+  } else if (targetFocus === 'containmentAction') {
+    if (modalTitle) modalTitle.textContent = '✍️ Enter / Edit Containment Action';
+  } else {
+    if (modalTitle) modalTitle.textContent = '✍️ Enter Root Cause & Containment Action';
+  }
+
   const nameInput = document.getElementById('inlineActionName');
   if (nameInput) {
-    let savedName = localStorage.getItem('savedOperatorName') || '';
+    let savedName = (issue.actionTakenBy || issue.enteredBy || localStorage.getItem('savedOperatorName') || '');
     if (savedName.startsWith('Mr. ')) savedName = savedName.substring(4);
     if (/^(operator|kamal|nimal)/i.test(savedName.trim())) {
       savedName = '';
@@ -1803,12 +1910,19 @@ function openInlineActionModal(hourKey, lineIdx) {
   if (rootCauseInput) rootCauseInput.value = issue.rootCause || '';
 
   const containmentInput = document.getElementById('inlineActionContainment');
-  if (containmentInput) {
-    containmentInput.value = issue.containmentAction || '';
-    containmentInput.focus();
-  }
+  if (containmentInput) containmentInput.value = issue.containmentAction || '';
 
   modal.classList.add('open');
+
+  setTimeout(() => {
+    if (targetFocus === 'rootCause' && rootCauseInput) {
+      rootCauseInput.focus();
+    } else if (targetFocus === 'containmentAction' && containmentInput) {
+      containmentInput.focus();
+    } else if (nameInput && !nameInput.value) {
+      nameInput.focus();
+    }
+  }, 100);
 }
 
 // Handle Inline Action Form Submit
@@ -1830,8 +1944,9 @@ async function handleInlineActionSubmit(e) {
   const actionVal = (containmentInput ? containmentInput.value : '').trim();
   const rootVal = (rootCauseInput ? rootCauseInput.value : '').trim();
 
+  // Either root cause or action can be entered (neither is strictly forced)
   if (!actionVal && !rootVal) {
-    alert('Please enter Containment Action or Root Cause.');
+    alert('Please enter at least Root Cause or Containment Action.');
     return;
   }
 
@@ -1864,17 +1979,7 @@ async function handleInlineActionSubmit(e) {
       const modal = document.getElementById('inlineActionModal');
       if (modal) modal.classList.remove('open');
 
-      // Update in memory
-      const hourData = (state.hours || []).find(h => h.hourKey === hourKey);
-      if (hourData && hourData.issues && hourData.issues[lineIdx]) {
-        if (rootVal) hourData.issues[lineIdx].rootCause = rootVal;
-        if (actionVal) {
-          hourData.issues[lineIdx].containmentAction = actionVal;
-          hourData.issues[lineIdx].actionTakenBy = formattedName;
-        }
-      }
-
-      renderTable();
+      await loadTrackingSheet();
       await fetchMissingActionsFromDB();
       await fetchTakenActionsFromDB();
     } else {
